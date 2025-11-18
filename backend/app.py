@@ -1,6 +1,7 @@
 # backend/app.py
 import os
-from typing import List
+import sys
+from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -10,6 +11,14 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 from dotenv import load_dotenv
 load_dotenv()
+
+# Add scripts directory to path to import check_db
+scripts_path = os.path.join(os.path.dirname(__file__), '..', 'scripts')
+scripts_path = os.path.abspath(scripts_path)
+if scripts_path not in sys.path:
+    sys.path.insert(0, scripts_path)
+from check_db import recommend_cosine, get_data_from_db
+import pandas as pd
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -37,6 +46,27 @@ class AttractionRead(BaseModel):
     class Config:
         from_attributes = True  # Pydantic v2: ORM mode
 
+# Recommendation models
+class RecommendationRequest(BaseModel):
+    city: Optional[str] = Field(None, description="Город")
+    type: Optional[str] = Field(None, description="Тип достопримечательности")
+    transport: Optional[str] = Field(None, description="Транспорт")
+    price: Optional[str] = Field(None, description="Цена (Бесплатно/Платно)")
+    desired_period: str = Field("anytime", description="Желаемое время (morning/afternoon/evening/night/anytime)")
+    min_rating: Optional[float] = Field(None, ge=0.0, le=5.0, description="Минимальный рейтинг")
+    top_k: int = Field(5, ge=1, le=50, description="Количество рекомендаций")
+
+class RecommendationResult(BaseModel):
+    id: int
+    name: str
+    city: Optional[str] = None
+    type: Optional[str] = None
+    transport: Optional[str] = None
+    price: Optional[str] = None
+    working_hours: Optional[str] = None
+    rating: Optional[float] = None
+    score: float
+
 def get_db() -> Session:
     db = SessionLocal()
     try:
@@ -61,6 +91,25 @@ def on_startup():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/test-recommendations")
+def test_recommendations():
+    """Test endpoint to check if check_db imports work."""
+    try:
+        df = get_data_from_db()
+        return {
+            "status": "ok",
+            "columns": list(df.columns) if not df.empty else [],
+            "row_count": len(df),
+            "sample": df.head(2).to_dict('records') if not df.empty else []
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 # ---------- БАЗОВЫЕ ЭНДПОИНТЫ ----------
 
@@ -96,3 +145,78 @@ def delete_attraction(attraction_id: int, db: Session = Depends(get_db)):
     db.delete(obj)
     db.commit()
     return None
+
+# ---------- РЕКОМЕНДАЦИИ ----------
+
+@app.post("/recommendations", response_model=List[RecommendationResult], summary="Получить рекомендации")
+def get_recommendations(request: RecommendationRequest):
+    """Получить рекомендации на основе пользовательских предпочтений."""
+    try:
+        # Get data from database
+        df = get_data_from_db()
+        if df.empty:
+            raise HTTPException(status_code=404, detail="База данных пуста")
+        
+        # Ensure required columns exist with defaults
+        required_columns = ['id', 'name', 'city', 'type', 'transport', 'price', 'working_hours', 'rating']
+        for col in required_columns:
+            if col not in df.columns:
+                if col == 'id':
+                    # If id doesn't exist, create it from index
+                    df['id'] = df.index + 1
+                elif col == 'rating':
+                    df[col] = 0.0
+                else:
+                    df[col] = ''
+        
+        # Prepare user preferences
+        user_prefs = {
+            "desired_period": request.desired_period,
+            "top_k": request.top_k
+        }
+        if request.city:
+            user_prefs["city"] = request.city
+        if request.type:
+            user_prefs["type"] = request.type
+        if request.transport:
+            user_prefs["transport"] = request.transport
+        if request.price:
+            user_prefs["price"] = request.price
+        if request.min_rating is not None:
+            user_prefs["min_rating"] = request.min_rating
+        
+        # Get recommendations
+        result_df = recommend_cosine(df, user_prefs, top_k=request.top_k)
+        
+        # Convert to list of dictionaries
+        results = []
+        for _, row in result_df.iterrows():
+            # Safely extract values with proper null handling
+            def safe_get(key, default=None):
+                if key not in row:
+                    return default
+                val = row[key]
+                if pd.isna(val):
+                    return default
+                return val
+            
+            results.append(RecommendationResult(
+                id=int(safe_get('id', 0)),
+                name=str(safe_get('name', '')),
+                city=str(safe_get('city', '')) if safe_get('city') else None,
+                type=str(safe_get('type', '')) if safe_get('type') else None,
+                transport=str(safe_get('transport', '')) if safe_get('transport') else None,
+                price=str(safe_get('price', '')) if safe_get('price') else None,
+                working_hours=str(safe_get('working_hours', '')) if safe_get('working_hours') else None,
+                rating=float(safe_get('rating', 0.0)) if safe_get('rating') is not None else None,
+                score=float(safe_get('score', 0.0))
+            ))
+        
+        return results
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Ошибка при получении рекомендаций: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)  # Log to console for debugging
+        raise HTTPException(status_code=500, detail=f"Ошибка при получении рекомендаций: {str(e)}")

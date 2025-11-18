@@ -1,4 +1,5 @@
 import { useState } from "react"
+import RecommendationForm from "./RecommendationForm"
 
 type Attraction = { id: number; name: string }
 
@@ -32,38 +33,45 @@ export default function App() {
 
   return (
     <main>
-      <h1 style={{ marginBottom: 16 }}>Достопримечательности</h1>
+      <h1 style={{ marginBottom: 16 }}>Система рекомендаций достопримечательностей</h1>
 
-      <button onClick={load} disabled={loading} style={{ marginBottom: 12 }}>
-        {loading ? "Загружаю…" : "Загрузить список"}
-      </button>
+      <div style={{ marginBottom: 40 }}>
+        <h2 style={{ marginBottom: 16 }}>Список достопримечательностей</h2>
+        <button onClick={load} disabled={loading} style={{ marginBottom: 12 }}>
+          {loading ? "Загружаю…" : "Загрузить список"}
+        </button>
 
-      {error && (
-        <p role="alert" style={{ color: "crimson", marginTop: 8 }}>
-          {error}
-        </p>
-      )}
+        {error && (
+          <p role="alert" style={{ color: "crimson", marginTop: 8 }}>
+            {error}
+          </p>
+        )}
 
-      {!items.length && !loading && !error && (
-        <p style={{ opacity: 0.8 }}>Пока пусто. Нажмите «Загрузить список».</p>
-      )}
+        {!items.length && !loading && !error && (
+          <p style={{ opacity: 0.8 }}>Пока пусто. Нажмите «Загрузить список».</p>
+        )}
 
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {items.map((it) => (
-          <li
-            key={it.id}
-            style={{
-              border: "1px solid #3a3a3a",
-              borderRadius: 12,
-              padding: 12,
-              marginTop: 10,
-            }}
-          >
-            <strong>{it.name}</strong>{" "}
-            <span style={{ opacity: 0.7 }}>id: {it.id}</span>
-          </li>
-        ))}
-      </ul>
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {items.map((it) => (
+            <li
+              key={it.id}
+              style={{
+                border: "1px solid #3a3a3a",
+                borderRadius: 12,
+                padding: 12,
+                marginTop: 10,
+              }}
+            >
+              <strong>{it.name}</strong>{" "}
+              <span style={{ opacity: 0.7 }}>id: {it.id}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <hr style={{ margin: "40px 0", border: "none", borderTop: "1px solid #ddd" }} />
+
+      <RecommendationForm />
     </main>
   )
 }
