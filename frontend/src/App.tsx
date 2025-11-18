@@ -12,6 +12,7 @@ export default function App() {
   const [items, setItems] = useState<Attraction[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showRecommendations, setShowRecommendations] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -36,7 +37,23 @@ export default function App() {
       <h1 style={{ marginBottom: 16 }}>Система рекомендаций достопримечательностей</h1>
 
       <div style={{ marginBottom: 40 }}>
-        <h2 style={{ marginBottom: 16 }}>Список достопримечательностей</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ margin: 0 }}>Список достопримечательностей</h2>
+          <button
+            onClick={() => setShowRecommendations(true)}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#007bff",
+              color: "white",
+              border: "none",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: 16,
+            }}
+          >
+            Получить рекомендации
+          </button>
+        </div>
         <button onClick={load} disabled={loading} style={{ marginBottom: 12 }}>
           {loading ? "Загружаю…" : "Загрузить список"}
         </button>
@@ -69,9 +86,65 @@ export default function App() {
         </ul>
       </div>
 
-      <hr style={{ margin: "40px 0", border: "none", borderTop: "1px solid #ddd" }} />
-
-      <RecommendationForm />
+      {showRecommendations && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 20,
+          }}
+          onClick={() => setShowRecommendations(false)}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderTopRightRadius: 8,
+              borderBottomRightRadius: 8,
+              borderTopLeftRadius: 8,
+              borderBottomLeftRadius: 8,
+              padding: 24,
+              maxWidth: 900,
+              maxHeight: "90vh",
+              overflow: "auto",
+              position: "relative",
+              width: "100%",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowRecommendations(false)}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                backgroundColor: "#f0f0f0",
+                border: "none",
+                borderRadius: "60%",
+                width: 32,
+                height: 32,
+                cursor: "pointer",
+                fontSize: 15,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                lineHeight: 1,
+              }}
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
+            <RecommendationForm />
+          </div>
+        </div>
+      )}
     </main>
   )
 }
