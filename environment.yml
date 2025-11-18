@@ -1,6 +1,6 @@
 name: attractions_reco
 channels:
-  - conda-forge
+  - defaults
 dependencies:
   - python=3.10           # версия интерпретатора
   - nodejs>=20
@@ -11,3 +11,7 @@ dependencies:
   - psycopg2              # драйвер PostgreSQL (важно для подключения к Neon)
   - python-dotenv         # чтобы app.py/db_init.py читали .env автоматически
   - pip                   # на случай pip-зависимостей
+  - pandas
+  - numpy
+  - pip:
+    - scikit-learn
