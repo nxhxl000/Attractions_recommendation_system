@@ -2,6 +2,7 @@ import os
 import logging
 import pandas as pd
 from sqlalchemy import create_engine, text
+from pathlib import Path
 from dotenv import load_dotenv
 
 # -----------------------------
@@ -14,6 +15,9 @@ log = logging.getLogger("db_load_attractions")
 # ЗАГРУЗКА .env
 # -----------------------------
 load_dotenv()  # подтянет DATABASE_URL из .env
+
+BASE_DIR = Path(__file__).resolve().parent  # .../backend
+CSV_PATH = BASE_DIR.parent / "attractions.csv"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -89,11 +93,8 @@ def main():
         # Создаём таблицу для достопримечательностей, если её нет
         ensure_attractions_table()
 
-        # Путь к CSV файлу с данными для достопримечательностей
-        csv_file_path = r"C:\MISIS\Attractions_recommendation_system\atractions.csv"
-        
         # Загружаем данные из CSV в базу данных
-        load_attractions_from_csv(csv_file_path)
+        load_attractions_from_csv(CSV_PATH)
     
     except Exception as e:
         log.error("Непредвиденная ошибка: %s", str(e))

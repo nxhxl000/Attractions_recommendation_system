@@ -1,6 +1,69 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
 
+function StarRatingSelector({
+  rating,
+  onRatingChange,
+}: {
+  rating: number | undefined
+  onRatingChange: (rating: number | undefined) => void
+}) {
+  const handleStarClick = (value: number) => {
+    // If clicking the same star, clear the rating
+    if (rating === value) {
+      onRatingChange(undefined)
+    } else {
+      onRatingChange(value)
+    }
+  }
+
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", gap: 4 }}>
+        {[1, 2, 3, 4, 5].map((value) => {
+          const isSelected = rating !== undefined && value <= rating
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => handleStarClick(value)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 4,
+                fontSize: 28,
+                color: isSelected ? "#ffc107" : "#e0e0e0",
+                transition: "transform 0.1s ease",
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = "scale(1.1)"
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = "scale(1)"
+              }}
+              aria-label={`Минимальный рейтинг ${value} звезд`}
+            >
+              ★
+            </button>
+          )
+        })}
+      </div>
+      {rating !== undefined && (
+        <span style={{ fontSize: 14, color: "#666", marginLeft: 4 }}>
+          {rating.toFixed(1)}+
+        </span>
+      )}
+      {rating === undefined && (
+        <span style={{ fontSize: 14, color: "#999", marginLeft: 4, fontStyle: "italic" }}>
+          Не выбрано
+        </span>
+      )}
+    </div>
+  )
+}
+
 type RecommendationRequest = {
   city?: string
   type?: string
@@ -103,6 +166,7 @@ export default function RecommendationForm() {
                 padding: 8,
                 borderRadius: 4,
                 border: "1px solid #ccc",
+                boxSizing: "border-box",
               }}
             />
           </div>
@@ -122,6 +186,7 @@ export default function RecommendationForm() {
                 padding: 8,
                 borderRadius: 4,
                 border: "1px solid #ccc",
+                boxSizing: "border-box",
               }}
             />
           </div>
@@ -141,6 +206,7 @@ export default function RecommendationForm() {
                 padding: 8,
                 borderRadius: 4,
                 border: "1px solid #ccc",
+                boxSizing: "border-box",
               }}
             />
           </div>
@@ -158,6 +224,7 @@ export default function RecommendationForm() {
                 padding: 8,
                 borderRadius: 4,
                 border: "1px solid #ccc",
+                boxSizing: "border-box",
               }}
             >
               <option value="">Не выбрано</option>
@@ -179,6 +246,7 @@ export default function RecommendationForm() {
                 padding: 8,
                 borderRadius: 4,
                 border: "1px solid #ccc",
+                boxSizing: "border-box",
               }}
             >
               <option value="anytime">В любое время</option>
@@ -190,30 +258,32 @@ export default function RecommendationForm() {
           </div>
 
           <div>
-            <label htmlFor="min_rating" style={{ display: "block", marginBottom: 4 }}>
-              Минимальный рейтинг (необязательно, 0-5)
+            <label htmlFor="min_rating" style={{ display: "block", marginBottom: 8 }}>
+              Минимальный рейтинг (необязательно)
             </label>
-            <input
-              id="min_rating"
-              type="number"
-              min="0"
-              max="5"
-              step="0.1"
-              value={formData.min_rating || ""}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  min_rating: e.target.value ? parseFloat(e.target.value) : undefined,
-                })
-              }
-              placeholder="0.0"
+            <div
               style={{
                 width: "100%",
-                padding: 8,
-                borderRadius: 4,
+                padding: "12px",
                 border: "1px solid #ccc",
+                borderRadius: 4,
+                backgroundColor: "#fafafa",
+                boxSizing: "border-box",
               }}
-            />
+            >
+              <StarRatingSelector
+                rating={formData.min_rating}
+                onRatingChange={(rating) =>
+                  setFormData({
+                    ...formData,
+                    min_rating: rating,
+                  })
+                }
+              />
+            </div>
+            <p style={{ fontSize: 12, color: "#666", marginTop: 4, marginBottom: 0 }}>
+              Нажмите на звезду, чтобы установить минимальный рейтинг. Повторный клик снимает выбор.
+            </p>
           </div>
 
           <div>
@@ -234,6 +304,7 @@ export default function RecommendationForm() {
                 padding: 8,
                 borderRadius: 4,
                 border: "1px solid #ccc",
+                boxSizing: "border-box",
               }}
             />
           </div>

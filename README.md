@@ -63,7 +63,15 @@ conda env update -f environment.yml --prune
 - добавляет 2 записи: «Старый замок», «Городской парк».
 
 ```bash
-python backend/db_init.py
+python backend/db_load_attractions.py
+```
+
+```bash
+python backend/db_load_ratings.py
+```
+
+```bash
+python backend/db_update_create_trigger.py
 ```
 
 Вывод — на русском. Повторный запуск безопасен.
@@ -129,7 +137,9 @@ VITE_API_URL=https://your-backend-host
 ```bash
 # Backend
 conda activate attractions_reco
-python backend/db_init.py
+python backend/db_load_attractions.py
+python backend/db_load_ratings.py
+python backend/db_update_create_trigger.py
 uvicorn backend.app:app --reload --port 8000
 
 # Frontend

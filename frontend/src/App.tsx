@@ -1,7 +1,6 @@
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
+import AttractionsList, { type AttractionCardData } from "./AttractionsList"
 import RecommendationForm from "./RecommendationForm"
-
-type Attraction = { id: number; name: string }
 
 // В dev используем прокси (/api -> http://localhost:8000).
 // В prod можно задать переменную окружения VITE_API_URL.
@@ -9,12 +8,12 @@ const BASE = import.meta.env.VITE_API_URL || ""
 const api = (path: string) => (BASE ? `${BASE}${path}` : `/api${path}`)
 
 export default function App() {
-  const [items, setItems] = useState<Attraction[]>([])
+  const [items, setItems] = useState<AttractionCardData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showRecommendations, setShowRecommendations] = useState(false)
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -23,67 +22,68 @@ export default function App() {
         const text = await res.text().catch(() => "")
         throw new Error(`Ошибка ${res.status}${text ? `: ${text}` : ""}`)
       }
-      const data: Attraction[] = await res.json()
+      const data: AttractionCardData[] = await res.json()
       setItems(data)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Не удалось загрузить данные")
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
 
   return (
     <main>
       <h1 style={{ marginBottom: 16 }}>Система рекомендаций достопримечательностей</h1>
 
       <div style={{ marginBottom: 40 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 16,
+            marginBottom: 24,
+          }}
+        >
           <h2 style={{ margin: 0 }}>Список достопримечательностей</h2>
-          <button
-            onClick={() => setShowRecommendations(true)}
-            style={{
-              padding: "10px 20px",
-              backgroundColor: "#007bff",
-              color: "white",
-              border: "none",
-              borderRadius: 4,
-              cursor: "pointer",
-              fontSize: 16,
-            }}
-          >
-            Получить рекомендации
-          </button>
-        </div>
-        <button onClick={load} disabled={loading} style={{ marginBottom: 12 }}>
-          {loading ? "Загружаю…" : "Загрузить список"}
-        </button>
-
-        {error && (
-          <p role="alert" style={{ color: "crimson", marginTop: 8 }}>
-            {error}
-          </p>
-        )}
-
-        {!items.length && !loading && !error && (
-          <p style={{ opacity: 0.8 }}>Пока пусто. Нажмите «Загрузить список».</p>
-        )}
-
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {items.map((it) => (
-            <li
-              key={it.id}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button
+              onClick={load}
+              disabled={loading}
               style={{
-                border: "1px solid #3a3a3a",
-                borderRadius: 12,
-                padding: 12,
-                marginTop: 10,
+                padding: "10px 20px",
+                backgroundColor: loading ? "#a1a1a1" : "#198754",
+                color: "white",
+                border: "none",
+                borderRadius: 4,
+                cursor: loading ? "not-allowed" : "pointer",
+                fontSize: 16,
               }}
             >
-              <strong>{it.name}</strong>{" "}
-              <span style={{ opacity: 0.7 }}>id: {it.id}</span>
-            </li>
-          ))}
-        </ul>
+              {loading ? "Загружаю…" : "Обновить список"}
+            </button>
+            <button
+              onClick={() => setShowRecommendations(true)}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: 4,
+                cursor: "pointer",
+                fontSize: 16,
+              }}
+            >
+              Получить рекомендации
+            </button>
+          </div>
+        </div>
+        <AttractionsList items={items} loading={loading} error={error} />
       </div>
 
       {showRecommendations && (

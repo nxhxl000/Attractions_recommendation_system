@@ -2,6 +2,7 @@ import os
 import logging
 import pandas as pd
 from sqlalchemy import create_engine, text
+from pathlib import Path
 from dotenv import load_dotenv
 
 # -----------------------------
@@ -14,6 +15,9 @@ log = logging.getLogger("db_load_ratings")
 # ЗАГРУЗКА .env
 # -----------------------------
 load_dotenv()  # подтянет DATABASE_URL из .env
+
+BASE_DIR = Path(__file__).resolve().parent  # .../backend
+CSV_PATH = BASE_DIR.parent / "ratings_table.csv"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -74,11 +78,8 @@ def main():
         # Создаём таблицу для рейтингов, если её нет
         ensure_ratings_table()
         
-        # Путь к CSV файлу с разреженной матрицей
-        csv_file_path = r"C:\MISIS\Attractions_recommendation_system\ratings_table.csv"
-        
         # Загружаем данные из CSV в базу данных
-        load_ratings_from_csv(csv_file_path)
+        load_ratings_from_csv(CSV_PATH)
     
     except Exception as e:
         log.error("Непредвиденная ошибка: %s", str(e))

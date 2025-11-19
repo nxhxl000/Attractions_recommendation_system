@@ -5,20 +5,30 @@ from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Integer, String, create_engine, select
+from sqlalchemy import Column, Integer, String, Float, create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# Add scripts directory to path to import check_db
+# Add scripts directory to path to import check_db (lazy import)
 scripts_path = os.path.join(os.path.dirname(__file__), '..', 'scripts')
 scripts_path = os.path.abspath(scripts_path)
 if scripts_path not in sys.path:
     sys.path.insert(0, scripts_path)
-from check_db import recommend_cosine, get_data_from_db
-import pandas as pd
+
+# Lazy import to avoid startup errors if check_db has issues
+def _import_recommendation_functions():
+    """Lazy import of recommendation functions to avoid startup errors."""
+    try:
+        from check_db import recommend_cosine, get_data_from_db
+        import pandas as pd
+        return recommend_cosine, get_data_from_db, pd
+    except ImportError as e:
+        raise RuntimeError(f"Не удалось импортировать check_db: {e}. Убедитесь, что файл scripts/check_db.py существует.")
+    except Exception as e:
+        raise RuntimeError(f"Ошибка при импорте check_db: {e}")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -35,6 +45,12 @@ class Attraction(Base):
     __tablename__ = "attractions"   # схема public по умолчанию
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=False, index=True)
+    city = Column(String, nullable=True)
+    type = Column(String, nullable=True)
+    transport = Column(String, nullable=True)
+    price = Column(String, nullable=True)
+    working_hours = Column(String, nullable=True)
+    rating = Column(Float, nullable=True)
 
 # Pydantic-схемы
 class AttractionCreate(BaseModel):
@@ -43,6 +59,12 @@ class AttractionCreate(BaseModel):
 class AttractionRead(BaseModel):
     id: int
     name: str
+    city: Optional[str] = None
+    type: Optional[str] = None
+    transport: Optional[str] = None
+    price: Optional[str] = None
+    working_hours: Optional[str] = None
+    rating: Optional[float] = None
     class Config:
         from_attributes = True  # Pydantic v2: ORM mode
 
@@ -96,6 +118,7 @@ def health():
 def test_recommendations():
     """Test endpoint to check if check_db imports work."""
     try:
+        _, get_data_from_db, _ = _import_recommendation_functions()
         df = get_data_from_db()
         return {
             "status": "ok",
@@ -152,6 +175,9 @@ def delete_attraction(attraction_id: int, db: Session = Depends(get_db)):
 def get_recommendations(request: RecommendationRequest):
     """Получить рекомендации на основе пользовательских предпочтений."""
     try:
+        # Lazy import recommendation functions
+        recommend_cosine, get_data_from_db, pd = _import_recommendation_functions()
+        
         # Get data from database
         df = get_data_from_db()
         if df.empty:
