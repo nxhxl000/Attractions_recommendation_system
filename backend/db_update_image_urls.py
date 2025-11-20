@@ -1,6 +1,6 @@
 import os
 import logging
-
+from pathlib import Path
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
@@ -18,7 +18,8 @@ if not DATABASE_URL:
         "Укажите её в .env (postgresql+psycopg2://...)?sslmode=require"
     )
 
-IMAGE_URLS_FILE = r"C:\MISIS\Attractions_recommendation_system\image_urls.txt"
+BASE_DIR = Path(__file__).resolve().parent  # .../backend
+IMAGE_URLS_FILE = BASE_DIR.parent / "image_urls.txt"
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 

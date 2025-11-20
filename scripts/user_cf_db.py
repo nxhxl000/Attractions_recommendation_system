@@ -5,7 +5,6 @@ import logging
 import pandas as pd
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
-from sklearn.metrics.pairwise import cosine_similarity
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger("user_cf")
@@ -23,10 +22,9 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 
 
 # ---------------------------------------------------------
-# Функция: загрузка данных из БД
-# (FastAPI вызывает её напрямую)
+# Загружаем данные
 # ---------------------------------------------------------
-def load_data_from_db() -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_data_from_db() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     ratings_df = pd.read_sql(
         "SELECT user_id, attraction_id, rating FROM public.ratings",
         engine,
@@ -40,11 +38,20 @@ def load_data_from_db() -> tuple[pd.DataFrame, pd.DataFrame]:
         engine,
     )
 
-    return ratings_df, attractions_df
+    # Загрузка cosine similarity из таблицы
+    sim_df = pd.read_sql(
+        """
+        SELECT user_id_low, user_id_high, similarity
+        FROM public.user_similarity
+        """,
+        engine,
+    )
+
+    return ratings_df, attractions_df, sim_df
 
 
 # ---------------------------------------------------------
-# Построение user-item матрицы
+# Build user-item matrix
 # ---------------------------------------------------------
 def build_user_item_matrix(ratings_df: pd.DataFrame) -> pd.DataFrame:
     return ratings_df.pivot_table(
@@ -56,39 +63,62 @@ def build_user_item_matrix(ratings_df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------
+# Получение similarity для пользователя user_id
+# ---------------------------------------------------------
+def load_similarity_for_user(target_user: int, sim_df: pd.DataFrame) -> pd.Series:
+    """
+    Возвращает Series, где index = user_id, value = similarity.
+    """
+
+    # пользователь как low
+    sim_low = sim_df[sim_df["user_id_low"] == target_user][["user_id_high", "similarity"]]
+    sim_low = sim_low.rename(columns={"user_id_high": "user_id"})
+
+    # пользователь как high
+    sim_high = sim_df[sim_df["user_id_high"] == target_user][["user_id_low", "similarity"]]
+    sim_high = sim_high.rename(columns={"user_id_low": "user_id"})
+
+    merged = pd.concat([sim_low, sim_high], axis=0)
+
+    if merged.empty:
+        return pd.Series(dtype=float)
+
+    return merged.set_index("user_id")["similarity"]
+    
+
+# ---------------------------------------------------------
 # Основная функция рекомендаций
 # ---------------------------------------------------------
 def recommend_user_based(
     user_item: pd.DataFrame,
     attractions_df: pd.DataFrame,
+    sim_df: pd.DataFrame,
     user_id: int,
     top_k: int = 10,
 ) -> pd.DataFrame:
     if user_id not in user_item.index:
         raise ValueError(f"У пользователя {user_id} нет оценок")
 
-    # Заполняем пропуски нулями для cosine_similarity
-    user_item_filled = user_item.fillna(0.0)
+    # similarity -> Series(user_id → similarity)
+    sim_series = load_similarity_for_user(user_id, sim_df)
 
-    user_ids = user_item_filled.index.to_list()
-    sim_matrix = cosine_similarity(user_item_filled.values)
+    if sim_series.empty:
+        raise ValueError(f"Нет similarity данных для пользователя {user_id}")
 
-    target_idx = user_ids.index(user_id)
-    target_sims = sim_matrix[target_idx]
-
-    # Какие объекты пользователь не оценивал
     target_ratings = user_item.loc[user_id]
+
+    # какие объекты пользователь не оценивал
     unrated_items = target_ratings[target_ratings.isna()].index.to_list()
 
-    sim_series = pd.Series(target_sims, index=user_ids).drop(index=user_id)
-
-    scores: list[tuple[int, float]] = []
+    scores = []
 
     for attr_id in unrated_items:
+        # оценки других пользователей
         other_ratings = user_item[attr_id].dropna()
         if other_ratings.empty:
             continue
 
+        # пересечение пользователей
         common_users = other_ratings.index.intersection(sim_series.index)
         if common_users.empty:
             continue
@@ -106,8 +136,10 @@ def recommend_user_based(
     if not scores:
         raise ValueError("Невозможно построить рекомендации")
 
-    # Топ-k
+    # sort
     scores_sorted = sorted(scores, key=lambda x: x[1], reverse=True)[:top_k]
+
+    # final
     attr_ids_top = [a_id for a_id, _ in scores_sorted]
     scores_map = {a_id: sc for a_id, sc in scores_sorted}
 
@@ -119,11 +151,11 @@ def recommend_user_based(
 
 
 # ---------------------------------------------------------
-# Обёртка, вызываемая из FastAPI
+# Главная функция для FastAPI
 # ---------------------------------------------------------
 def get_recommendations_for_user(user_id: int, top_k: int = 10) -> list[dict]:
-    ratings_df, attractions_df = load_data_from_db()
+    ratings_df, attractions_df, sim_df = load_data_from_db()
     user_item = build_user_item_matrix(ratings_df)
-    rec_df = recommend_user_based(user_item, attractions_df, user_id, top_k)
+    rec_df = recommend_user_based(user_item, attractions_df, sim_df, user_id, top_k)
 
     return rec_df.to_dict(orient="records")

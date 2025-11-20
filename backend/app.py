@@ -43,6 +43,16 @@ def _import_recommendation_functions():
         raise RuntimeError(f"Не удалось импортировать check_db: {e}. Убедитесь, что файл scripts/check_db.py существует.")
     except Exception as e:
         raise RuntimeError(f"Ошибка при импорте check_db: {e}")
+    
+def _import_user_based_functions():
+    """Lazy import of recommendation functions to avoid startup errors."""
+    try:
+        from user_cf_db import get_recommendations_for_user
+        return get_recommendations_for_user
+    except ImportError as e:
+        raise RuntimeError(f"Не удалось импортировать user_cf: {e}. Убедитесь, что файл scripts/user_cf.py существует.")
+    except Exception as e:
+        raise RuntimeError(f"Ошибка при импорте user_cf: {e}")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -647,3 +657,14 @@ def get_recommendations(request: RecommendationRequest):
         error_detail = f"Ошибка при получении рекомендаций: {str(e)}\n{traceback.format_exc()}"
         print(error_detail)  # Log to console for debugging
         raise HTTPException(status_code=500, detail=f"Ошибка при получении рекомендаций: {str(e)}")
+    
+# ---------- USER-BASED RECOMMENDATIONS ЭНДПОИНТЫ ----------
+
+@app.get("/recommend/user/{user_id}")
+def recommend_user(user_id: int, top_k: int = 10):
+    try:
+        get_recommendations_for_user = _import_user_based_functions()
+        result = get_recommendations_for_user(user_id, top_k)
+        return {"user_id": user_id, "recommendations": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
