@@ -18,6 +18,9 @@ type AttractionsListProps = {
   items: AttractionCardData[]
   loading: boolean
   error: string | null
+  plannedIds: number[]                     // 👈 добавили
+  onPlannedClick: (attractionId: number) => void
+  onCancelPlanned: (attractionId: number) => void
 }
 
 const ITEMS_PER_PAGE = 10
@@ -53,11 +56,22 @@ function StarRating({ rating }: { rating: number }) {
 
 type SortOption = "name-asc" | "name-desc" | "rating-asc" | "rating-desc" | "city-asc" | "city-desc" | "type-asc" | "type-desc" | "none"
 
-export default function AttractionsList({ items, loading, error }: AttractionsListProps) {
+export default function AttractionsList({
+  items,
+  loading,
+  error,
+  plannedIds,
+  onPlannedClick,
+  onCancelPlanned,
+}: AttractionsListProps) {
+  console.log(
+    "DEBUG AttractionsList file =", import.meta.url,
+    "| typeof onPlannedClick =", typeof onPlannedClick
+  )
   const [currentPage, setCurrentPage] = useState(1)
   const [displayedCount, setDisplayedCount] = useState(ITEMS_PER_PAGE) // For "load more" mode
   const [paginationMode, setPaginationMode] = useState<"pages" | "load-more">("pages")
-  
+
   // Sorting and filtering state
   const [sortBy, setSortBy] = useState<SortOption>("none")
   const [filterCity, setFilterCity] = useState<string>("")
@@ -78,7 +92,7 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
         item.type ? item.type.split(",").map(t => t.trim().toLowerCase()) : []
       )
     return Array.from(new Set(types)).sort()
-  }, [items])  
+  }, [items])
 
   // Apply filters and sorting
   const filteredAndSortedItems = useMemo(() => {
@@ -93,7 +107,7 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
         item.type?.toLowerCase().includes(filterType.toLowerCase())
       )
     }
-    
+
     if (filterPrice) {
       result = result.filter(item => item.price === filterPrice)
     }
@@ -132,7 +146,7 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
 
   // Calculate pagination based on filtered items
   const totalPages = useMemo(() => Math.ceil(filteredAndSortedItems.length / ITEMS_PER_PAGE), [filteredAndSortedItems.length])
-  
+
   // Get items to display based on mode
   const displayedItems = useMemo(() => {
     if (paginationMode === "pages") {
@@ -181,7 +195,7 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
   const getPageNumbers = () => {
     const delta = 2 // Show 2 pages on each side of current
     const pages: (number | string)[] = []
-    
+
     if (totalPages <= 7) {
       // Show all pages if 7 or fewer
       for (let i = 1; i <= totalPages; i++) {
@@ -190,27 +204,27 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
     } else {
       // Always show first page
       pages.push(1)
-      
+
       if (currentPage > delta + 2) {
         pages.push("...")
       }
-      
+
       // Show pages around current
       const start = Math.max(2, currentPage - delta)
       const end = Math.min(totalPages - 1, currentPage + delta)
-      
+
       for (let i = start; i <= end; i++) {
         pages.push(i)
       }
-      
+
       if (currentPage < totalPages - delta - 1) {
         pages.push("...")
       }
-      
+
       // Always show last page
       pages.push(totalPages)
     }
-    
+
     return pages
   }
 
@@ -514,124 +528,180 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
           minHeight: "500px",
         }}
       >
-        {displayedItems.map((attraction) => (
-          <article
-            key={attraction.id}
-            style={{
-              border: "1px solid #e1e1e1",
-              borderRadius: 12,
-              padding: 16,
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
-              backgroundColor: "#fff",
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
-          >
-            {/* 👇 НОВЫЙ БЛОК С КАРТИНКОЙ */}
-            {attraction.image_url && (
-              <div
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  overflow: "hidden",
-                  backgroundColor: "#f1f3f5",
-                }}
-              >
-                <img
-                  src={attraction.image_url}
-                  alt={attraction.name}
-                  style={{
-                    width: "100%",
-                    height: 140,       // единый размер
-                    objectFit: "cover",
-                    display: "block",
-                  }}
-                />
-              </div>
-            )}
+        {displayedItems.map((attraction) => {
+          const isPlanned = plannedIds.includes(attraction.id) // 👈 новое
 
-            <div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "#6c757d",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.6,
-                }}
-              >
-                #{attraction.id}
-              </div>
-              <h3 style={{ margin: "4px 0 0", fontSize: 18, lineHeight: 1.4 }}>
-                {attraction.name}
-              </h3>
-            </div>
-
-            {/* City and Type prominently displayed */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
-              {attraction.city && (
-                <span
-                  style={{
-                    backgroundColor: "#e3f2fd",
-                    color: "#1976d2",
-                    padding: "4px 10px",
-                    borderRadius: 12,
-                    fontSize: 13,
-                    fontWeight: 500,
-                  }}
-                >
-                  📍 {attraction.city}
-                </span>
-              )}
-              {attraction.type && (
-                <span
-                  style={{
-                    backgroundColor: "#f3e5f5",
-                    color: "#7b1fa2",
-                    padding: "4px 10px",
-                    borderRadius: 12,
-                    fontSize: 13,
-                    fontWeight: 500,
-                  }}
-                >
-                  🏛️ {attraction.type}
-                </span>
-              )}
-            </div>
-
-            {/* Rating as stars */}
-            {typeof attraction.rating === "number" && (
-              <div>
-                <StarRating rating={attraction.rating} />
-              </div>
-            )}
-
-            {/* Other details */}
-            <dl
+          return (
+            <article
+              key={attraction.id}
               style={{
-                margin: 0,
-                display: "grid",
-                gridTemplateColumns: "auto 1fr",
-                rowGap: 6,
-                columnGap: 8,
-                fontSize: 14,
+                border: "1px solid #e1e1e1",
+                borderRadius: 12,
+                padding: 16,
+                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+                backgroundColor: "#fff",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                // position: "relative",  // можно убрать, больше не нужно
               }}
             >
-              {detailFields.map(({ label, key }) => {
-                const value = attraction[key]
-                if (!value) {
-                  return null
-                }
-                return (
-                  <Fragment key={`${attraction.id}-${String(key)}`}>
-                    <dt style={{ fontWeight: 600, color: "#495057" }}>{label}:</dt>
-                    <dd style={{ margin: 0, color: "#212529" }}>{value}</dd>
-                  </Fragment>
-                )
-              })}
-            </dl>
-          </article>
-        ))}
+              {/* 👇 НОВЫЙ БЛОК С КАРТИНКОЙ */}
+              {attraction.image_url && (
+                <div
+                  style={{
+                    width: "100%",
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    backgroundColor: "#f1f3f5",
+                  }}
+                >
+                  <img
+                    src={attraction.image_url}
+                    alt={attraction.name}
+                    style={{
+                      width: "100%",
+                      height: 140,       // единый размер
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#6c757d",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.6,
+                  }}
+                >
+                  #{attraction.id}
+                </div>
+                <h3 style={{ margin: "4px 0 0", fontSize: 18, lineHeight: 1.4 }}>
+                  {attraction.name}
+                </h3>
+              </div>
+
+              {/* City and Type prominently displayed */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                {attraction.city && (
+                  <span
+                    style={{
+                      backgroundColor: "#e3f2fd",
+                      color: "#1976d2",
+                      padding: "4px 10px",
+                      borderRadius: 12,
+                      fontSize: 13,
+                      fontWeight: 500,
+                    }}
+                  >
+                    📍 {attraction.city}
+                  </span>
+                )}
+                {attraction.type && (
+                  <span
+                    style={{
+                      backgroundColor: "#f3e5f5",
+                      color: "#7b1fa2",
+                      padding: "4px 10px",
+                      borderRadius: 12,
+                      fontSize: 13,
+                      fontWeight: 500,
+                    }}
+                  >
+                    🏛️ {attraction.type}
+                  </span>
+                )}
+              </div>
+
+              {/* Rating as stars */}
+              {typeof attraction.rating === "number" && (
+                <div>
+                  <StarRating rating={attraction.rating} />
+                </div>
+              )}
+
+              {/* Other details */}
+              <dl
+                style={{
+                  margin: 0,
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr",
+                  rowGap: 6,
+                  columnGap: 8,
+                  fontSize: 14,
+                }}
+              >
+                {detailFields.map(({ label, key }) => {
+                  const value = attraction[key]
+                  if (!value) {
+                    return null
+                  }
+                  return (
+                    <Fragment key={`${attraction.id}-${String(key)}`}>
+                      <dt style={{ fontWeight: 600, color: "#495057" }}>{label}:</dt>
+                      <dd style={{ margin: 0, color: "#212529" }}>{value}</dd>
+                    </Fragment>
+                  )
+                })}
+              </dl>
+              {/* Блок действий: текст + кнопка */}
+              <div
+                style={{
+                  marginTop: "auto",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                {isPlanned && (
+                  <span
+                    style={{
+                      color: "#198754",
+                      fontSize: 13,
+                      fontWeight: 500,
+                    }}
+                  >
+                    Посещение запланировано!
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    console.log(
+                      isPlanned ? "Cancel planned, id =" : "Planned click, id =",
+                      attraction.id
+                    )
+                    if (isPlanned) {
+                      onCancelPlanned(attraction.id)
+                    } else {
+                      onPlannedClick(attraction.id)
+                    }
+                  }}
+                  style={{
+                    padding: "6px 10px",
+                    backgroundColor: isPlanned ? "#dc3545" : "#f4a460",
+                    color: isPlanned ? "#fff" : "#3c2f2f",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {isPlanned ? "Отменить визит" : "Собираюсь посетить"}
+                </button>
+              </div>
+            </article>
+          )
+        })}
       </div>
 
       {/* Pagination controls */}
@@ -684,7 +754,7 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
                 >
                   ←
                 </button>
-                
+
                 {getPageNumbers().map((page, index) => {
                   if (page === "...") {
                     return (
@@ -700,10 +770,10 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
                       </span>
                     )
                   }
-                  
+
                   const pageNum = page as number
                   const isActive = pageNum === currentPage
-                  
+
                   return (
                     <button
                       key={pageNum}
@@ -725,7 +795,7 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
                     </button>
                   )
                 })}
-                
+
                 <button
                   type="button"
                   onClick={handleNext}

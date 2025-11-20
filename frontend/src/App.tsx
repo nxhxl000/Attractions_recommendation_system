@@ -4,6 +4,7 @@ import RecommendationForm from "./RecommendationForm";
 import UserBasedRecommendations from "./UserBasedRecommendations";
 import LoginForm from "./LoginForm";
 import OnboardingRatings from "./OnboardingRatings";
+import AccountPage from "./AccountPage"
 
 // В dev используем прокси (/api -> http://localhost:8000).
 // В prod можно задать переменную окружения VITE_API_URL.
@@ -11,19 +12,18 @@ const BASE = import.meta.env.VITE_API_URL || "";
 const api = (path: string) => (BASE ? `${BASE}${path}` : `/api${path}`);
 
 export default function App() {
-  const [items, setItems] = useState<AttractionCardData[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showRecommendations, setShowRecommendations] = useState(false);
+  const [items, setItems] = useState<AttractionCardData[]>([])
+  const [plannedIds, setPlannedIds] = useState<number[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showRecommendations, setShowRecommendations] = useState(false)
 
   // 🔐 токен пользователя
   const [token, setToken] = useState<string | null>(null);
   // 👤 информация о текущем пользователе
-  const [currentUser, setCurrentUser] = useState<{
-    id: number;
-    username: string;
-  } | null>(null);
-  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: number; username: string } | null>(null)
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null)
+  const [activePage, setActivePage] = useState<"main" | "account">("main")
   // Чтение сохранённых данных при загрузке страницы
 
   useEffect(() => {
@@ -73,11 +73,42 @@ export default function App() {
     }
   }, [token]);
 
+  type PlannedVisitFromApi = {
+    attraction_id: number
+    // остальные поля нам не нужны для кнопок
+  }
+
+  async function fetchPlannedVisits(userId: number, token: string) {
+    try {
+      const res = await fetch(api(`/users/${userId}/planned-visits`), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "")
+        throw new Error(`Ошибка ${res.status}${text ? `: ${text}` : ""}`)
+      }
+
+      const data: PlannedVisitFromApi[] = await res.json()
+      setPlannedIds(data.map((item) => item.attraction_id))
+    } catch (e) {
+      console.error("Не удалось загрузить запланированные визиты:", e)
+    }
+  }
+
   useEffect(() => {
     if (token) {
       void load();
     }
   }, [token, load]);
+
+  useEffect(() => {
+    if (token && currentUser) {
+      void fetchPlannedVisits(currentUser.id, token)
+    }
+  }, [token, currentUser])
 
   async function fetchRatingsStatus(userId: number) {
     try {
@@ -109,22 +140,80 @@ export default function App() {
     return (
       <LoginForm
         onLoginSuccess={({ token, userId, username }) => {
-          setToken(token);
-          const user = { id: userId, username };
-          setCurrentUser(user);
+          setToken(token)
+          const user = { id: userId, username }
+          setCurrentUser(user)
 
-          localStorage.setItem("token", token);
-          localStorage.setItem("currentUser", JSON.stringify(user));
+          localStorage.setItem("token", token)
+          localStorage.setItem("currentUser", JSON.stringify(user))
 
-          void fetchRatingsStatus(userId);
+          void fetchRatingsStatus(userId)
+          void fetchPlannedVisits(userId, token)
         }}
       />
-    );
+    )
   }
 
-  // если авторизация есть, но ещё не знаем про онбординг — можно показать заглушку
-  if (needsOnboarding === null) {
-    return <main style={{ padding: 24 }}>Загружаем данные профиля…</main>;
+  async function handleAddPlanned(attractionId: number) {
+    if (!currentUser || !token) return
+
+    try {
+      const res = await fetch(api("/planned-visits"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          user_id: currentUser.id,
+          attraction_id: attractionId,
+        }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "")
+        throw new Error(`Ошибка ${res.status}${text ? `: ${text}` : ""}`)
+      }
+
+      await res.json()
+
+      // 👉 отмечаем как запланированную в UI
+      setPlannedIds(prev =>
+        prev.includes(attractionId) ? prev : [...prev, attractionId]
+      )
+    } catch (e) {
+      console.error("Не удалось добавить в планы:", e)
+    }
+  }
+
+  async function handleRemovePlanned(attractionId: number) {
+    if (!currentUser || !token) return
+
+    try {
+      const res = await fetch(api("/planned-visits"), {
+        method: "DELETE",                        // см. свой backend
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          user_id: currentUser.id,
+          attraction_id: attractionId,
+        }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "")
+        throw new Error(`Ошибка ${res.status}${text ? `: ${text}` : ""}`)
+      }
+
+      await res.json()
+
+      // 👉 убираем из локального списка
+      setPlannedIds(prev => prev.filter(id => id !== attractionId))
+    } catch (e) {
+      console.error("Не удалось отменить визит:", e)
+    }
   }
 
   // если нужно пройти онбординг — показываем экран с 15 объектами
@@ -134,14 +223,31 @@ export default function App() {
         userId={currentUser.id}
         onDone={() => setNeedsOnboarding(false)}
       />
-    );
+    )
   }
+
+  // 👇 если выбрана страница аккаунта — показываем её вместо главной
+  if (activePage === "account") {
+    return (
+      <AccountPage
+        user={currentUser}
+        token={token}
+        onBack={() => setActivePage("main")}
+      />
+    )
+  }
+
+  console.log(
+    "DEBUG App file =", import.meta.url,
+    "| typeof handleAddPlanned =", typeof handleAddPlanned
+  )
+
   return (
     <main style={{ position: "relative" }}>
       {currentUser && (
         <div
           style={{
-            position: "fixed", // закрепить в углу окна
+            position: "fixed",
             top: 8,
             left: 16,
             backgroundColor: "#0d6efd",
@@ -150,10 +256,30 @@ export default function App() {
             borderRadius: 4,
             fontSize: 14,
             zIndex: 1100,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
           }}
         >
-          Вы вошли как <strong>{currentUser.username}</strong> (id:{" "}
-          {currentUser.id})
+          <span>
+            Вы вошли как <strong>{currentUser.username}</strong> (id: {currentUser.id})
+          </span>
+          <button
+            type="button"
+            onClick={() => setActivePage("account")}
+            style={{
+              padding: "4px 10px",
+              backgroundColor: "rgba(255, 255, 255, 0.15)",
+              color: "white",
+              border: "1px solid rgba(255, 255, 255, 0.5)",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: 13,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Мой аккаунт
+          </button>
         </div>
       )}
 
@@ -205,13 +331,15 @@ export default function App() {
             </button>
             <button
               onClick={() => {
-                setToken(null);
-                setCurrentUser(null);
-                setItems([]);
+                setToken(null)
+                setCurrentUser(null)
+                setItems([])
+                setPlannedIds([])
+                setActivePage("main")
 
                 // чистим сохранённую сессию
-                localStorage.removeItem("token");
-                localStorage.removeItem("currentUser");
+                localStorage.removeItem("token")
+                localStorage.removeItem("currentUser")
               }}
               style={{
                 padding: "10px 20px",
@@ -227,32 +355,15 @@ export default function App() {
             </button>
           </div>
         </div>
-        <AttractionsList items={items} loading={loading} error={error} />
+        <AttractionsList
+          items={items}
+          loading={loading}
+          error={error}
+          plannedIds={plannedIds}
+          onPlannedClick={handleAddPlanned}
+          onCancelPlanned={handleRemovePlanned}
+        />
       </div>
-
-      {currentUser && (
-        <div
-          style={{
-            position: "fixed",
-            top: 60,
-            left: 16,
-            width: 450,
-            maxHeight: "80vh",
-            overflowY: "auto",
-            backgroundColor: "#fff",
-            border: "1px solid #ccc",
-            borderRadius: 8,
-            padding: 16,
-            zIndex: 1050,
-            boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-          }}
-        >
-          <UserBasedRecommendations userId={currentUser.id} />
-        </div>
-      )}
 
       {showRecommendations && (
         <div
@@ -306,10 +417,14 @@ export default function App() {
             >
               ×
             </button>
-            <RecommendationForm />
+            <RecommendationForm
+              plannedIds={plannedIds}
+              onPlannedClick={handleAddPlanned}
+              onCancelPlanned={handleRemovePlanned}
+            />
           </div>
         </div>
       )}
     </main>
-  );
+  )
 }

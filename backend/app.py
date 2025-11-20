@@ -192,6 +192,20 @@ class PlannedVisitCreate(BaseModel):
     attraction_id: int
     # дату с фронта НЕ требуем — используем now() в БД
 
+class PlannedVisitItem(BaseModel):
+    attraction_id: int          # из planned_visits
+    added_at: datetime          # когда добавили в список
+
+    id: int                     # id достопримечательности (из attractions)
+    name: str
+    city: Optional[str] = None
+    type: Optional[str] = None
+    transport: Optional[str] = None
+    price: Optional[str] = None
+    working_hours: Optional[str] = None
+    rating: Optional[float] = None
+    image_url: Optional[str] = None
+
 def get_db() -> Session:
     db = SessionLocal()
     try:
@@ -354,6 +368,96 @@ def add_planned_visit(payload: PlannedVisitCreate, db: Session = Depends(get_db)
         "attraction_id": visit.attraction_id,
         "added_at": visit.added_at,
     }
+
+@app.delete(
+    "/planned-visits",
+    status_code=status.HTTP_200_OK,
+    summary="Убрать достопримечательность из списка «Хочу посетить»",
+)
+def delete_planned_visit(payload: PlannedVisitCreate, db: Session = Depends(get_db)):
+    """
+    Удаляет запись из public.planned_visits.
+    Принимает те же поля, что и add_planned_visit:
+    { "user_id": ..., "attraction_id": ... }
+    """
+    # проверим, что пользователь существует (опционально)
+    user = db.get(User, payload.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    # проверим, что достопримечательность существует (опционально)
+    attraction = db.get(Attraction, payload.attraction_id)
+    if not attraction:
+        raise HTTPException(status_code=404, detail="Достопримечательность не найдена")
+
+    visit_pk = (payload.user_id, payload.attraction_id)
+    visit = db.get(PlannedVisit, visit_pk)
+
+    if not visit:
+        # делаем ответ «мягким», без 404, чтобы фронт не падал
+        return {
+            "status": "not_found",
+            "user_id": payload.user_id,
+            "attraction_id": payload.attraction_id,
+        }
+
+    db.delete(visit)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "user_id": payload.user_id,
+        "attraction_id": payload.attraction_id,
+    }
+
+@app.get(
+    "/users/{user_id}/planned-visits",
+    response_model=List[PlannedVisitItem],
+    summary="Список достопримечательностей, которые пользователь планирует посетить",
+)
+def get_planned_visits(user_id: int, db: Session = Depends(get_db)):
+    # опционально: проверим, что пользователь существует
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    q = (
+        db.query(
+            PlannedVisit.attraction_id,
+            PlannedVisit.added_at,
+            Attraction.id,
+            Attraction.name,
+            Attraction.city,
+            Attraction.type,
+            Attraction.transport,
+            Attraction.price,
+            Attraction.working_hours,
+            Attraction.rating,
+            Attraction.image_url,
+        )
+        .join(Attraction, PlannedVisit.attraction_id == Attraction.id)
+        .filter(PlannedVisit.user_id == user_id)
+        .order_by(PlannedVisit.added_at.desc())
+    )
+
+    rows = q.all()
+
+    return [
+        PlannedVisitItem(
+            attraction_id=row.attraction_id,
+            added_at=row.added_at,
+            id=row.id,
+            name=row.name,
+            city=row.city,
+            type=row.type,
+            transport=row.transport,
+            price=row.price,
+            working_hours=row.working_hours,
+            rating=row.rating,
+            image_url=row.image_url,
+        )
+        for row in rows
+    ]
 
 @app.post(
     "/onboarding/ratings",
