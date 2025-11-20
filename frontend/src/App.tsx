@@ -452,7 +452,12 @@ export default function App() {
             // убрали justifyContent: "center"
           }}
         >
-          <UserBasedRecommendations userId={currentUser.id} />
+          <UserBasedRecommendations
+            userId={currentUser.id}
+            plannedIds={plannedIds}
+            onPlannedClick={handleAddPlanned}
+            onCancelPlanned={handleRemovePlanned}
+          />
         </div>
       )}
     </main>

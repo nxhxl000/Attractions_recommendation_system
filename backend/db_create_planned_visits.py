@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS public.planned_visits (
     user_id        INTEGER NOT NULL,
     attraction_id  INTEGER NOT NULL,
     added_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    evaluated      BOOLEAN NOT NULL DEFAULT FALSE,
 
     CONSTRAINT planned_visits_pk
         PRIMARY KEY (user_id, attraction_id),
@@ -52,6 +53,7 @@ COMMENT ON TABLE public.planned_visits IS 'Список достопримеча
 COMMENT ON COLUMN public.planned_visits.user_id IS 'ID пользователя';
 COMMENT ON COLUMN public.planned_visits.attraction_id IS 'ID достопримечательности';
 COMMENT ON COLUMN public.planned_visits.added_at IS 'Дата и время, когда пользователь добавил достопримечательность в планы';
+COMMENT ON COLUMN public.planned_visits.evaluated IS 'Флаг, что пользователь уже оценил эту достопримечательность';
 """
 
 def ensure_planned_visits_table():

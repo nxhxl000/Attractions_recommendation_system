@@ -522,7 +522,7 @@ export default function AttractionsList({
         className="attractions-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
           gap: 16,
           flex: 1,
           minHeight: "500px",

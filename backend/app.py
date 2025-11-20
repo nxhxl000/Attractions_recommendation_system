@@ -116,6 +116,12 @@ class PlannedVisit(Base):
         nullable=False,
         server_default=func.now(),
     )
+    # 👇 новое поле — флаг "оценено"
+    evaluated = Column(
+        Boolean,
+        nullable=False,
+        default=False,   # в БД уже есть DEFAULT FALSE, здесь — для ORM
+    )
 
 # Pydantic-схемы
 class AttractionCreate(BaseModel):
@@ -193,10 +199,11 @@ class PlannedVisitCreate(BaseModel):
     # дату с фронта НЕ требуем — используем now() в БД
 
 class PlannedVisitItem(BaseModel):
-    attraction_id: int          # из planned_visits
-    added_at: datetime          # когда добавили в список
+    attraction_id: int
+    added_at: datetime
+    evaluated: bool
 
-    id: int                     # id достопримечательности (из attractions)
+    id: int
     name: str
     city: Optional[str] = None
     type: Optional[str] = None
@@ -205,6 +212,11 @@ class PlannedVisitItem(BaseModel):
     working_hours: Optional[str] = None
     rating: Optional[float] = None
     image_url: Optional[str] = None
+
+    user_rating: Optional[int] = None   # 👈 ОЦЕНКА ПОЛЬЗОВАТЕЛЯ
+
+class PlannedVisitRatingInput(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
 
 def get_db() -> Session:
     db = SessionLocal()
@@ -410,6 +422,70 @@ def delete_planned_visit(payload: PlannedVisitCreate, db: Session = Depends(get_
         "attraction_id": payload.attraction_id,
     }
 
+@app.post(
+    "/users/{user_id}/planned-visits/{attraction_id}/rate",
+    summary="Оценить запланированную достопримечательность",
+)
+def rate_planned_visit(
+    user_id: int,
+    attraction_id: int,
+    payload: PlannedVisitRatingInput,
+    db: Session = Depends(get_db),
+):
+    # 1. Проверяем юзера и достопримечательность
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    attraction = db.get(Attraction, attraction_id)
+    if not attraction:
+        raise HTTPException(status_code=404, detail="Достопримечательность не найдена")
+
+    try:
+        # 2. Обновляем/создаём запись в ratings
+        pk = (user_id, attraction_id)
+        rating_obj = db.get(Rating, pk)
+        if rating_obj:
+            rating_obj.rating = payload.rating
+        else:
+            rating_obj = Rating(
+                user_id=user_id,
+                attraction_id=attraction_id,
+                rating=payload.rating,
+            )
+            db.add(rating_obj)
+
+        # 3. Помечаем planned_visits.evaluated = True
+        pv = db.get(PlannedVisit, (user_id, attraction_id))
+        if pv:
+            pv.evaluated = True
+        else:
+            # на всякий случай: если вдруг не было planned_visits,
+            # можем создать его сразу как "оценённый"
+            pv = PlannedVisit(
+                user_id=user_id,
+                attraction_id=attraction_id,
+                evaluated=True,
+            )
+            db.add(pv)
+
+        db.commit()
+        db.refresh(rating_obj)
+        db.refresh(pv)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении оценки: {e}")
+
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "attraction_id": attraction_id,
+        "rating": rating_obj.rating,
+        "evaluated": pv.evaluated,
+    }
+
+
 @app.get(
     "/users/{user_id}/planned-visits",
     response_model=List[PlannedVisitItem],
@@ -421,10 +497,12 @@ def get_planned_visits(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
+    # 👇 Делаем LEFT JOIN с ratings, чтобы вытащить user_rating
     q = (
         db.query(
             PlannedVisit.attraction_id,
             PlannedVisit.added_at,
+            PlannedVisit.evaluated,
             Attraction.id,
             Attraction.name,
             Attraction.city,
@@ -434,8 +512,14 @@ def get_planned_visits(user_id: int, db: Session = Depends(get_db)):
             Attraction.working_hours,
             Attraction.rating,
             Attraction.image_url,
+            Rating.rating.label("user_rating"),   # 👈 оценка пользователя
         )
         .join(Attraction, PlannedVisit.attraction_id == Attraction.id)
+        .outerjoin(
+            Rating,
+            (Rating.user_id == PlannedVisit.user_id)
+            & (Rating.attraction_id == PlannedVisit.attraction_id),
+        )
         .filter(PlannedVisit.user_id == user_id)
         .order_by(PlannedVisit.added_at.desc())
     )
@@ -446,6 +530,7 @@ def get_planned_visits(user_id: int, db: Session = Depends(get_db)):
         PlannedVisitItem(
             attraction_id=row.attraction_id,
             added_at=row.added_at,
+            evaluated=bool(row.evaluated),
             id=row.id,
             name=row.name,
             city=row.city,
@@ -455,6 +540,7 @@ def get_planned_visits(user_id: int, db: Session = Depends(get_db)):
             working_hours=row.working_hours,
             rating=row.rating,
             image_url=row.image_url,
+            user_rating=row.user_rating,   # 👈 отдаём во фронт
         )
         for row in rows
     ]
