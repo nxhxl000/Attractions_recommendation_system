@@ -37,12 +37,13 @@ def _import_recommendation_functions():
     """Lazy import of recommendation functions to avoid startup errors."""
     try:
         from check_db import recommend_cosine, get_data_from_db
+        from user_cf import predict_for_user, load_user_ratings
         import pandas as pd
-        return recommend_cosine, get_data_from_db, pd
+        return recommend_cosine, get_data_from_db, pd, load_user_ratings, predict_for_user
     except ImportError as e:
-        raise RuntimeError(f"Не удалось импортировать check_db: {e}. Убедитесь, что файл scripts/check_db.py существует.")
+        raise RuntimeError(f"Не удалось импортировать check_db, user_cf: {e}. Убедитесь, что файл scripts/check_db.py существует.")
     except Exception as e:
-        raise RuntimeError(f"Ошибка при импорте check_db: {e}")
+        raise RuntimeError(f"Ошибка при импорте check_db, user_cf: {e}")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -543,3 +544,60 @@ def get_recommendations(request: RecommendationRequest):
         error_detail = f"Ошибка при получении рекомендаций: {str(e)}\n{traceback.format_exc()}"
         print(error_detail)  # Log to console for debugging
         raise HTTPException(status_code=500, detail=f"Ошибка при получении рекомендаций: {str(e)}")
+    
+# ---------- USER-BASED RECOMMENDATIONS ЭНДПОИНТЫ ----------
+
+@app.get(
+    "/recommendations/user-based/{user_id}",
+    response_model=List[RecommendationResult],
+    summary="User-based Collaborative Filtering рекомендации"
+)
+def recommend_user_cf(user_id: int, limit: int = 10, db: Session = Depends(get_db)):
+    """
+    User–User CF рекомендации на основе рейтингов других пользователей.
+    """
+
+    load_user_ratings, predict_for_user = _import_recommendation_functions()
+
+    # 1. Загружаем данные
+    user_ratings = load_user_ratings(db)
+
+    if user_id not in user_ratings:
+        raise HTTPException(status_code=404, detail="У пользователя нет оценок")
+
+    # 2. Predict
+    predictions = predict_for_user(user_id, user_ratings)
+
+    if not predictions:
+        return []
+
+    # 3. Отсортируем по score
+    ranked = sorted(
+        predictions.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:limit]
+
+    # 4. Превращаем в объекты Attraction
+    results = []
+    for attr_id, score in ranked:
+        attraction = db.get(Attraction, attr_id)
+        if not attraction:
+            continue
+
+        results.append(
+            RecommendationResult(
+                id=attraction.id,
+                name=attraction.name,
+                city=attraction.city,
+                type=attraction.type,
+                transport=attraction.transport,
+                price=attraction.price,
+                working_hours=attraction.working_hours,
+                rating=attraction.rating,
+                image_url=attraction.image_url,
+                score=float(score),
+            )
+        )
+
+    return results
