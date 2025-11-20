@@ -90,7 +90,17 @@ type RecommendationResult = {
 const BASE = import.meta.env.VITE_API_URL || ""
 const api = (path: string) => (BASE ? `${BASE}${path}` : `/api${path}`)
 
-export default function RecommendationForm() {
+type RecommendationFormProps = {
+  plannedIds: number[]
+  onPlannedClick: (attractionId: number) => void
+  onCancelPlanned: (attractionId: number) => void
+}
+
+export default function RecommendationForm({
+  plannedIds,
+  onPlannedClick,
+  onCancelPlanned,
+}: RecommendationFormProps) {
   const [formData, setFormData] = useState<RecommendationRequest>({
     city: "",
     type: "",
@@ -344,137 +354,189 @@ export default function RecommendationForm() {
         </div>
       )}
 
-      {results.length > 0 && (
+       {results.length > 0 && (
         <div>
           <h3 style={{ marginBottom: 16 }}>Результаты ({results.length}):</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {results.map((result) => (
-              <div
-                key={result.id}
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 8,
-                  padding: 16,
-                  backgroundColor: "#f9f9f9",
-                  display: "flex",
-                  gap: 16,
-                  alignItems: "center",
-                  position: "relative", // 👈 чтобы можно было закрепить бейдж
-                }}
-              >
-                {/* бейдж в правом верхнем углу карточки */}
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 8,
-                    right: 16,
-                    backgroundColor: "#007bff",
-                    color: "white",
-                    padding: "4px 8px",
-                    borderRadius: 4,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Схожесть: {(result.score * 100).toFixed(1)}%
-                </span>
+            {results.map((result) => {
+              const isPlanned = plannedIds.includes(result.id)   // 👈 считаем здесь
 
-                {/* Картинка */}
-                {result.image_url && (
-                  <div
-                    style={{
-                      width: 160,
-                      height: 160,
-                      borderRadius: 8,
-                      overflow: "hidden",
-                      backgroundColor: "#f1f3f5",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <img
-                      src={result.image_url}
-                      alt={result.name}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        display: "block",
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Текстовый блок по центру */}
+              return (
                 <div
+                  key={result.id}
                   style={{
-                    flex: 1,
+                    border: "1px solid #ddd",
+                    borderRadius: 8,
+                    padding: 16,
+                    backgroundColor: "#f9f9f9",
                     display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    gap: 8,
-                    minWidth: 0,
-                    textAlign: "center",
+                    gap: 16,
+                    alignItems: "center",
+                    position: "relative",
                   }}
                 >
-                  <h4
+                  {/* бейдж в правом верхнем углу карточки */}
+                  <span
                     style={{
-                      margin: 0,
-                      fontSize: 18,
-                      lineHeight: 1.3,
-                      wordBreak: "break-word",
+                      position: "absolute",
+                      top: 8,
+                      right: 16,
+                      backgroundColor: "#007bff",
+                      color: "white",
+                      padding: "4px 8px",
+                      borderRadius: 4,
+                      fontSize: 12,
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    {result.name}
-                  </h4>
+                    Схожесть: {(result.score * 100).toFixed(1)}%
+                  </span>
 
+                  {/* Картинка */}
+                  {result.image_url && (
+                    <div
+                      style={{
+                        width: 160,
+                        height: 160,
+                        borderRadius: 8,
+                        overflow: "hidden",
+                        backgroundColor: "#f1f3f5",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <img
+                        src={result.image_url}
+                        alt={result.name}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          display: "block",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Текстовый блок по центру */}
                   <div
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
                       gap: 8,
-                      fontSize: 14,
-                      justifyItems: "center",
-                      marginTop: 8,
+                      minWidth: 0,
+                      textAlign: "center",
                     }}
                   >
-                    {result.city && (
-                      <div>
-                        <strong>Город:</strong> {result.city}
-                      </div>
+                    <h4
+                      style={{
+                        margin: 0,
+                        fontSize: 18,
+                        lineHeight: 1.3,
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {result.name}
+                    </h4>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: 8,
+                        fontSize: 14,
+                        justifyItems: "center",
+                        marginTop: 8,
+                      }}
+                    >
+                      {result.city && (
+                        <div>
+                          <strong>Город:</strong> {result.city}
+                        </div>
+                      )}
+                      {result.type && (
+                        <div>
+                          <strong>Тип:</strong> {result.type}
+                        </div>
+                      )}
+                      {result.transport && (
+                        <div>
+                          <strong>Транспорт:</strong> {result.transport}
+                        </div>
+                      )}
+                      {result.price && (
+                        <div>
+                          <strong>Цена:</strong> {result.price}
+                        </div>
+                      )}
+                      {result.working_hours && (
+                        <div>
+                          <strong>Часы работы:</strong> {result.working_hours}
+                        </div>
+                      )}
+                      {result.rating !== null && result.rating !== undefined && (
+                        <div>
+                          <strong>Рейтинг:</strong> {result.rating.toFixed(1)}/5.0
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Блок "запланировано" + кнопка */}
+                  <div
+                    style={{
+                      marginLeft: "auto",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      gap: 6,
+                    }}
+                  >
+                    {isPlanned && (
+                      <span
+                        style={{
+                          color: "#198754",
+                          fontSize: 13,
+                          fontWeight: 500,
+                        }}
+                      >
+                        Посещение запланировано!
+                      </span>
                     )}
-                    {result.type && (
-                      <div>
-                        <strong>Тип:</strong> {result.type}
-                      </div>
-                    )}
-                    {result.transport && (
-                      <div>
-                        <strong>Транспорт:</strong> {result.transport}
-                      </div>
-                    )}
-                    {result.price && (
-                      <div>
-                        <strong>Цена:</strong> {result.price}
-                      </div>
-                    )}
-                    {result.working_hours && (
-                      <div>
-                        <strong>Часы работы:</strong> {result.working_hours}
-                      </div>
-                    )}
-                    {result.rating !== null && result.rating !== undefined && (
-                      <div>
-                        <strong>Рейтинг:</strong> {result.rating.toFixed(1)}/5.0
-                      </div>
-                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isPlanned) {
+                          onCancelPlanned(result.id)
+                        } else {
+                          onPlannedClick(result.id)
+                        }
+                      }}
+                      style={{
+                        padding: "6px 10px",
+                        backgroundColor: isPlanned ? "#dc3545" : "#f4a460",
+                        color: isPlanned ? "#fff" : "#3c2f2f",
+                        border: "none",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isPlanned ? "Отменить визит" : "Собираюсь посетить"}
+                    </button>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
-    </div>
-  )
-}
+        </div>
+      )
+      }
 
