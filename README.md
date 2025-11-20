@@ -140,6 +140,7 @@ conda activate attractions_reco
 python backend/db_load_attractions.py
 python backend/db_load_ratings.py
 python backend/db_update_create_trigger.py
+python backend/db_update_image_urls.py
 python backend/db_create_users.py
 python backend/db_build_user_similarity.py
 python backend/db_create_planned_visits.py
