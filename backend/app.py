@@ -5,7 +5,19 @@ from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Integer, String, Float, Boolean, create_engine, select, func
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    create_engine,
+    select,
+    func,
+)
+from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from passlib.context import CryptContext
@@ -72,6 +84,28 @@ class Rating(Base):
     user_id = Column(Integer, primary_key=True)
     attraction_id = Column(Integer, primary_key=True)
     rating = Column(Integer, nullable=False)  # 1–5, ограничения есть на уровне DDL
+
+# Планируемые к посещению достопримечательности
+class PlannedVisit(Base):
+    __tablename__ = "planned_visits"
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    attraction_id = Column(
+        Integer,
+        ForeignKey("attractions.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    added_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 # Pydantic-схемы
 class AttractionCreate(BaseModel):
@@ -142,6 +176,11 @@ class RatingsBatchInput(BaseModel):
 class RatingsStatus(BaseModel):
     has_ratings: bool
     count: int
+
+class PlannedVisitCreate(BaseModel):
+    user_id: int
+    attraction_id: int
+    # дату с фронта НЕ требуем — используем now() в БД
 
 def get_db() -> Session:
     db = SessionLocal()
@@ -251,6 +290,60 @@ def get_onboarding_attractions(limit: int = 15, db: Session = Depends(get_db)):
     )
     return db.scalars(stmt).all()
 
+@app.post(
+    "/planned-visits",
+    status_code=status.HTTP_201_CREATED,
+    summary="Добавить достопримечательность в список «Хочу посетить»",
+)
+def add_planned_visit(payload: PlannedVisitCreate, db: Session = Depends(get_db)):
+    """
+    Добавляет запись в public.planned_visits.
+    Если такая пара (user_id, attraction_id) уже есть — делаем запрос идемпотентным
+    и просто возвращаем статус `already_exists`.
+    """
+    # Проверим, что пользователь существует
+    user = db.get(User, payload.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    # Проверим, что достопримечательность существует
+    attraction = db.get(Attraction, payload.attraction_id)
+    if not attraction:
+        raise HTTPException(status_code=404, detail="Достопримечательность не найдена")
+
+    # Композитный PK (user_id, attraction_id)
+    existing = db.get(PlannedVisit, (payload.user_id, payload.attraction_id))
+    if existing:
+        return {
+            "status": "already_exists",
+            "user_id": payload.user_id,
+            "attraction_id": payload.attraction_id,
+            "added_at": existing.added_at,
+        }
+
+    visit = PlannedVisit(
+        user_id=payload.user_id,
+        attraction_id=payload.attraction_id,
+        # added_at возьмётся из server_default=now() в БД
+    )
+    db.add(visit)
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не удалось добавить в список планов: {e}",
+        )
+
+    db.refresh(visit)
+
+    return {
+        "status": "created",
+        "user_id": visit.user_id,
+        "attraction_id": visit.attraction_id,
+        "added_at": visit.added_at,
+    }
 
 @app.post(
     "/onboarding/ratings",
