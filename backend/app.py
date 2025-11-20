@@ -5,9 +5,11 @@ from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Integer, String, Float, create_engine, select
+from sqlalchemy import Column, Integer, String, Float, Boolean, create_engine, select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from passlib.context import CryptContext
+import secrets
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -51,6 +53,25 @@ class Attraction(Base):
     price = Column(String, nullable=True)
     working_hours = Column(String, nullable=True)
     rating = Column(Float, nullable=True)
+    image_url = Column(String, nullable=True)
+
+# Класс пользователя для аутентификации
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_admin = Column(Boolean, nullable=False, default=False)
+
+# Оценки пользователей
+class Rating(Base):
+    __tablename__ = "ratings"
+
+    # композитный первичный ключ: один пользователь оценивает каждую достопримечательность максимум один раз
+    user_id = Column(Integer, primary_key=True)
+    attraction_id = Column(Integer, primary_key=True)
+    rating = Column(Integer, nullable=False)  # 1–5, ограничения есть на уровне DDL
 
 # Pydantic-схемы
 class AttractionCreate(BaseModel):
@@ -65,6 +86,7 @@ class AttractionRead(BaseModel):
     price: Optional[str] = None
     working_hours: Optional[str] = None
     rating: Optional[float] = None
+    image_url: Optional[str] = None
     class Config:
         from_attributes = True  # Pydantic v2: ORM mode
 
@@ -87,7 +109,39 @@ class RecommendationResult(BaseModel):
     price: Optional[str] = None
     working_hours: Optional[str] = None
     rating: Optional[float] = None
+    image_url: Optional[str] = None
     score: float
+
+# User authentication models
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: int
+    username: str
+
+# User registration model
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+# Ratings input models
+class RatingInput(BaseModel):
+    attraction_id: int
+    rating: int = Field(..., ge=1, le=5)
+
+
+class RatingsBatchInput(BaseModel):
+    user_id: int
+    ratings: List[RatingInput]
+
+
+class RatingsStatus(BaseModel):
+    has_ratings: bool
+    count: int
 
 def get_db() -> Session:
     db = SessionLocal()
@@ -95,6 +149,15 @@ def get_db() -> Session:
         yield db
     finally:
         db.close()
+
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
 
 app = FastAPI(title="Attractions Backend — базовые CRUD (auto-id)")
 
@@ -113,6 +176,136 @@ def on_startup():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.post("/auth/login", response_model=TokenResponse)
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data.username).first()
+
+    if not user or not verify_password(data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неверный логин или пароль",
+        )
+
+    token = secrets.token_hex(32)
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        user_id=user.id,
+        username=user.username,
+    )
+
+@app.post("/auth/register", response_model=TokenResponse, summary="Регистрация пользователя")
+def register(data: RegisterRequest, db: Session = Depends(get_db)):
+    # Проверяем, что такого username ещё нет
+    existing = db.query(User).filter(User.username == data.username).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с таким логином уже существует",
+        )
+
+    # Хэшируем пароль
+    hashed = get_password_hash(data.password)
+
+    user = User(
+        username=data.username,
+        hashed_password=hashed,
+        is_admin=False,  # на всякий случай, не даём делать админов через этот эндпоинт
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не удалось создать пользователя (ошибка уникальности)",
+        )
+
+    db.refresh(user)
+
+    # После регистрации сразу «логиним» — отдаём токен
+    token = secrets.token_hex(32)
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        user_id=user.id,
+        username=user.username,
+    )
+
+@app.get(
+    "/onboarding/attractions",
+    response_model=List[AttractionRead],
+    summary="Подборка достопримечательностей для первичной оценки",
+)
+def get_onboarding_attractions(limit: int = 15, db: Session = Depends(get_db)):
+    """
+    Возвращает случайные достопримечательности (по умолчанию 15 шт.)
+    для экрана первичной оценки при регистрации.
+    """
+    stmt = (
+        select(Attraction)
+        .order_by(func.random())
+        .limit(limit)
+    )
+    return db.scalars(stmt).all()
+
+
+@app.post(
+    "/onboarding/ratings",
+    status_code=status.HTTP_201_CREATED,
+    summary="Сохранить первичные оценки пользователя",
+)
+def save_onboarding_ratings(payload: RatingsBatchInput, db: Session = Depends(get_db)):
+    """
+    Сохраняет/обновляет оценки пользователя для выбранных достопримечательностей.
+    Используется после экрана с 15 объектами и звёздочками.
+    """
+    if not payload.ratings:
+        raise HTTPException(status_code=400, detail="Список оценок пуст")
+
+    # опционально можно проверить, что пользователь существует
+    user = db.get(User, payload.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    try:
+        for r in payload.ratings:
+            # композитный PK: (user_id, attraction_id)
+            pk = (payload.user_id, r.attraction_id)
+            obj = db.get(Rating, pk)
+            if obj:
+                obj.rating = r.rating
+            else:
+                obj = Rating(
+                    user_id=payload.user_id,
+                    attraction_id=r.attraction_id,
+                    rating=r.rating,
+                )
+                db.add(obj)
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении оценок: {e}")
+
+    return {"status": "ok"}
+
+@app.get(
+    "/users/{user_id}/ratings-status",
+    response_model=RatingsStatus,
+    summary="Проверить, есть ли у пользователя оценки",
+)
+def get_ratings_status(user_id: int, db: Session = Depends(get_db)):
+    """
+    Возвращает, есть ли у пользователя хотя бы одна оценка, и их количество.
+    """
+    count = db.query(Rating).filter(Rating.user_id == user_id).count()
+    return RatingsStatus(
+        has_ratings=count > 0,
+        count=count,
+    )
 
 @app.get("/test-recommendations")
 def test_recommendations():
@@ -184,7 +377,17 @@ def get_recommendations(request: RecommendationRequest):
             raise HTTPException(status_code=404, detail="База данных пуста")
         
         # Ensure required columns exist with defaults
-        required_columns = ['id', 'name', 'city', 'type', 'transport', 'price', 'working_hours', 'rating']
+        required_columns = [
+            'id',
+            'name',
+            'city',
+            'type',
+            'transport',
+            'price',
+            'working_hours',
+            'rating',
+            'image_url',          
+        ]
         for col in required_columns:
             if col not in df.columns:
                 if col == 'id':
@@ -235,7 +438,8 @@ def get_recommendations(request: RecommendationRequest):
                 price=str(safe_get('price', '')) if safe_get('price') else None,
                 working_hours=str(safe_get('working_hours', '')) if safe_get('working_hours') else None,
                 rating=float(safe_get('rating', 0.0)) if safe_get('rating') is not None else None,
-                score=float(safe_get('score', 0.0))
+                image_url=str(safe_get('image_url', '')) if safe_get('image_url') else None,
+                score=float(safe_get('score', 0.0)),   # 👈 ВАЖНО: добавили score
             ))
         
         return results

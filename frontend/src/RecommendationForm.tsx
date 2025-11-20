@@ -83,6 +83,7 @@ type RecommendationResult = {
   price?: string | null
   working_hours?: string | null
   rating?: number | null
+  image_url?: string | null
   score: number
 }
 
@@ -138,6 +139,7 @@ export default function RecommendationForm() {
 
       const data: RecommendationResult[] = await res.json()
       setResults(data)
+      console.log("Received recommendations:", data)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Не удалось получить рекомендации")
     } finally {
@@ -354,53 +356,118 @@ export default function RecommendationForm() {
                   borderRadius: 8,
                   padding: 16,
                   backgroundColor: "#f9f9f9",
+                  display: "flex",
+                  gap: 16,
+                  alignItems: "center",
+                  position: "relative", // 👈 чтобы можно было закрепить бейдж
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <h4 style={{ margin: 0, fontSize: 18 }}>{result.name}</h4>
-                  <span
+                {/* бейдж в правом верхнем углу карточки */}
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 16,
+                    backgroundColor: "#007bff",
+                    color: "white",
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    fontSize: 12,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Схожесть: {(result.score * 100).toFixed(1)}%
+                </span>
+
+                {/* Картинка */}
+                {result.image_url && (
+                  <div
                     style={{
-                      backgroundColor: "#007bff",
-                      color: "white",
-                      padding: "4px 8px",
-                      borderRadius: 4,
-                      fontSize: 12,
+                      width: 160,
+                      height: 160,
+                      borderRadius: 8,
+                      overflow: "hidden",
+                      backgroundColor: "#f1f3f5",
+                      flexShrink: 0,
                     }}
                   >
-                    Схожесть: {(result.score * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, fontSize: 14 }}>
-                  {result.city && (
-                    <div>
-                      <strong>Город:</strong> {result.city}
-                    </div>
-                  )}
-                  {result.type && (
-                    <div>
-                      <strong>Тип:</strong> {result.type}
-                    </div>
-                  )}
-                  {result.transport && (
-                    <div>
-                      <strong>Транспорт:</strong> {result.transport}
-                    </div>
-                  )}
-                  {result.price && (
-                    <div>
-                      <strong>Цена:</strong> {result.price}
-                    </div>
-                  )}
-                  {result.working_hours && (
-                    <div>
-                      <strong>Часы работы:</strong> {result.working_hours}
-                    </div>
-                  )}
-                  {result.rating !== null && result.rating !== undefined && (
-                    <div>
-                      <strong>Рейтинг:</strong> {result.rating.toFixed(1)}/5.0
-                    </div>
-                  )}
+                    <img
+                      src={result.image_url}
+                      alt={result.name}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Текстовый блок по центру */}
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    gap: 8,
+                    minWidth: 0,
+                    textAlign: "center",
+                  }}
+                >
+                  <h4
+                    style={{
+                      margin: 0,
+                      fontSize: 18,
+                      lineHeight: 1.3,
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {result.name}
+                  </h4>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 8,
+                      fontSize: 14,
+                      justifyItems: "center",
+                      marginTop: 8,
+                    }}
+                  >
+                    {result.city && (
+                      <div>
+                        <strong>Город:</strong> {result.city}
+                      </div>
+                    )}
+                    {result.type && (
+                      <div>
+                        <strong>Тип:</strong> {result.type}
+                      </div>
+                    )}
+                    {result.transport && (
+                      <div>
+                        <strong>Транспорт:</strong> {result.transport}
+                      </div>
+                    )}
+                    {result.price && (
+                      <div>
+                        <strong>Цена:</strong> {result.price}
+                      </div>
+                    )}
+                    {result.working_hours && (
+                      <div>
+                        <strong>Часы работы:</strong> {result.working_hours}
+                      </div>
+                    )}
+                    {result.rating !== null && result.rating !== undefined && (
+                      <div>
+                        <strong>Рейтинг:</strong> {result.rating.toFixed(1)}/5.0
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

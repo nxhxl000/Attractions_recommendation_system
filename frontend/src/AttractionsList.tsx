@@ -10,6 +10,7 @@ export type AttractionCardData = {
   price?: string | null
   working_hours?: string | null
   rating?: number | null
+  image_url?: string | null   
 }
 
 type AttractionsListProps = {
@@ -526,11 +527,43 @@ export default function AttractionsList({ items, loading, error }: AttractionsLi
               gap: 12,
             }}
           >
+            {/* 👇 НОВЫЙ БЛОК С КАРТИНКОЙ */}
+            {attraction.image_url && (
+              <div
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  backgroundColor: "#f1f3f5",
+                }}
+              >
+                <img
+                  src={attraction.image_url}
+                  alt={attraction.name}
+                  style={{
+                    width: "100%",
+                    height: 140,       // единый размер
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              </div>
+            )}
+
             <div>
-              <div style={{ fontSize: 12, color: "#6c757d", textTransform: "uppercase", letterSpacing: 0.6 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#6c757d",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                }}
+              >
                 #{attraction.id}
               </div>
-              <h3 style={{ margin: "4px 0 0", fontSize: 18, lineHeight: 1.4 }}>{attraction.name}</h3>
+              <h3 style={{ margin: "4px 0 0", fontSize: 18, lineHeight: 1.4 }}>
+                {attraction.name}
+              </h3>
             </div>
 
             {/* City and Type prominently displayed */}

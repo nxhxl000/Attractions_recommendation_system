@@ -34,7 +34,8 @@ def get_data_from_db():
         COALESCE(transport, '') as transport,
         COALESCE(price, '') as price,
         COALESCE(working_hours, '') as working_hours,
-        COALESCE(rating, 0.0) as rating
+        COALESCE(rating, 0.0) as rating,
+        COALESCE(image_url, '') as image_url
     FROM public.attractions
     """
     try:

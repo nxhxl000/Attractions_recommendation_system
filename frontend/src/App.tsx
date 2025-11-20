@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import AttractionsList, { type AttractionCardData } from "./AttractionsList"
 import RecommendationForm from "./RecommendationForm"
+import LoginForm from "./LoginForm"
+
 
 // В dev используем прокси (/api -> http://localhost:8000).
 // В prod можно задать переменную окружения VITE_API_URL.
@@ -13,11 +15,37 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [showRecommendations, setShowRecommendations] = useState(false)
 
+  // 🔐 токен пользователя
+  const [token, setToken] = useState<string | null>(null)
+  // 👤 информация о текущем пользователе
+  const [currentUser, setCurrentUser] = useState<{ id: number; username: string } | null>(null)
+
+  // Чтение сохранённых данных при загрузке страницы
+useEffect(() => {
+  const savedToken = localStorage.getItem("token")
+  const savedUser = localStorage.getItem("currentUser")
+
+  if (savedToken) setToken(savedToken)
+  if (savedUser) {
+    try {
+      setCurrentUser(JSON.parse(savedUser))
+    } catch {
+      localStorage.removeItem("currentUser")
+    }
+  }
+}, [])
+
   const load = useCallback(async () => {
+    if (!token) return // без токена не грузим
+
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(api("/attractions"))
+      const res = await fetch(api("/attractions"), {
+        headers: {
+          Authorization: `Bearer ${token}`, // backend пока не проверяет, но пусть будет
+        },
+      })
       if (!res.ok) {
         const text = await res.text().catch(() => "")
         throw new Error(`Ошибка ${res.status}${text ? `: ${text}` : ""}`)
@@ -29,15 +57,53 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [token])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    if (token) {
+      void load()
+    }
+  }, [token, load])
+
+  // 🚪 если не залогинен — показываем только форму логина
+  if (!token || !currentUser) {
+    return (
+      <LoginForm
+        onLoginSuccess={({ token, userId, username }) => {
+          setToken(token)
+          setCurrentUser({ id: userId, username })
+
+          // сохраняем сессию
+          localStorage.setItem("token", token)
+          localStorage.setItem("currentUser", JSON.stringify({ id: userId, username }))
+        }}
+      />
+    )
+  }
 
   return (
-    <main>
-      <h1 style={{ marginBottom: 16 }}>Система рекомендаций достопримечательностей</h1>
+  <main style={{ position: "relative" }}>
+    {currentUser && (
+      <div
+        style={{
+          position: "fixed",        // закрепить в углу окна
+          top: 8,
+          left: 16,
+          backgroundColor: "#0d6efd",
+          color: "white",
+          padding: "6px 12px",
+          borderRadius: 4,
+          fontSize: 14,
+          zIndex: 1100,
+        }}
+      >
+        Вы вошли как <strong>{currentUser.username}</strong> (id: {currentUser.id})
+      </div>
+    )}
+
+    <h1 style={{ marginBottom: 16, textAlign: "center" }}>
+      Система рекомендаций достопримечательностей
+    </h1>
 
       <div style={{ marginBottom: 40 }}>
         <div
@@ -81,6 +147,28 @@ export default function App() {
             >
               Получить рекомендации
             </button>
+            <button
+              onClick={() => {
+                setToken(null)
+                setCurrentUser(null)
+                setItems([])
+
+                // чистим сохранённую сессию
+                localStorage.removeItem("token")
+                localStorage.removeItem("currentUser")
+              }}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#dc3545",
+                color: "white",
+                border: "none",
+                borderRadius: 4,
+                cursor: "pointer",
+                fontSize: 16,
+              }}
+            >
+              Выйти
+            </button>
           </div>
         </div>
         <AttractionsList items={items} loading={loading} error={error} />
@@ -106,10 +194,7 @@ export default function App() {
           <div
             style={{
               backgroundColor: "white",
-              borderTopRightRadius: 8,
-              borderBottomRightRadius: 8,
-              borderTopLeftRadius: 8,
-              borderBottomLeftRadius: 8,
+              borderRadius: 8,
               padding: 24,
               maxWidth: 900,
               maxHeight: "90vh",
