@@ -72,7 +72,7 @@ export default function UserBasedRecommendations({
         borderRadius: 8,
       }}
     >
-      <h3 style={{ marginTop: 0 }}>Пользовательские рекомендации</h3>
+      <h3 style={{ marginTop: 0 }}>Похожие на Вас пользователи также рекомендуют</h3>
 
       {loading && <p>Загружаем рекомендации…</p>}
       {error && (

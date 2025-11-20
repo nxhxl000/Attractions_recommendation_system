@@ -53,6 +53,17 @@ def _import_user_based_functions():
         raise RuntimeError(f"Не удалось импортировать user_cf: {e}. Убедитесь, что файл scripts/user_cf.py существует.")
     except Exception as e:
         raise RuntimeError(f"Ошибка при импорте user_cf: {e}")
+    
+def get_user_evaluated_ids(db: Session, user_id: int) -> list[int]:
+  rows = (
+      db.query(PlannedVisit.attraction_id)
+      .filter(
+          PlannedVisit.user_id == user_id,
+          PlannedVisit.evaluated == True,  # именно посещён и оценён
+      )
+      .all()
+  )
+  return [r[0] for r in rows]
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -657,8 +668,19 @@ def delete_attraction(attraction_id: int, db: Session = Depends(get_db)):
 
 # ---------- РЕКОМЕНДАЦИИ ----------
 
-@app.post("/recommendations", response_model=List[RecommendationResult], summary="Получить рекомендации")
-def get_recommendations(request: RecommendationRequest):
+@app.post(
+    "/recommendations",
+    response_model=List[RecommendationResult],
+    summary="Получить рекомендации",
+)
+def get_recommendations(
+    request: RecommendationRequest,
+    user_id: Optional[int] = Query(
+        None,
+        description="ID пользователя для исключения уже посещённых и оценённых достопримечательностей",
+    ),
+    db: Session = Depends(get_db),
+):
     """Получить рекомендации на основе пользовательских предпочтений."""
     try:
         # Lazy import recommendation functions
@@ -671,30 +693,30 @@ def get_recommendations(request: RecommendationRequest):
         
         # Ensure required columns exist with defaults
         required_columns = [
-            'id',
-            'name',
-            'city',
-            'type',
-            'transport',
-            'price',
-            'working_hours',
-            'rating',
-            'image_url',          
+            "id",
+            "name",
+            "city",
+            "type",
+            "transport",
+            "price",
+            "working_hours",
+            "rating",
+            "image_url",
         ]
         for col in required_columns:
             if col not in df.columns:
-                if col == 'id':
+                if col == "id":
                     # If id doesn't exist, create it from index
-                    df['id'] = df.index + 1
-                elif col == 'rating':
+                    df["id"] = df.index + 1
+                elif col == "rating":
                     df[col] = 0.0
                 else:
-                    df[col] = ''
-        
+                    df[col] = ""
+
         # Prepare user preferences
         user_prefs = {
             "desired_period": request.desired_period,
-            "top_k": request.top_k
+            "top_k": request.top_k,
         }
         if request.city:
             user_prefs["city"] = request.city
@@ -706,9 +728,44 @@ def get_recommendations(request: RecommendationRequest):
             user_prefs["price"] = request.price
         if request.min_rating is not None:
             user_prefs["min_rating"] = request.min_rating
-        
-        # Get recommendations
-        result_df = recommend_cosine(df, user_prefs, top_k=request.top_k)
+
+        # 👇 Список id, которые нужно исключить (посещены и оценены пользователем)
+        exclude_ids = None
+        if user_id is not None:
+            exclude_ids = [
+                row[0]
+                for row in db.query(PlannedVisit.attraction_id)
+                .filter(
+                    PlannedVisit.user_id == user_id,
+                    PlannedVisit.evaluated == True,
+                )
+                .all()
+            ]
+
+        # Получаем рекомендации с учётом исключённых id
+        result_df = recommend_cosine(
+            df,
+            user_prefs,
+            top_k=request.top_k,
+            exclude_ids=exclude_ids,    # 👈 важно: передаём в алгоритм
+        )
+
+        # 👇 Порог по схожести: 0.7 (70%)
+        THRESHOLD = 0.7
+        if "score" not in result_df.columns:
+            raise HTTPException(
+                status_code=500,
+                detail="Алгоритм рекомендаций не вернул столбец 'score'",
+            )
+
+        result_df = result_df[result_df["score"] >= THRESHOLD].reset_index(drop=True)
+
+        # Если после порога ничего не осталось — предлагаем изменить параметры поиска
+        if result_df.empty:
+            raise HTTPException(
+                status_code=404,
+                detail="Измените параметры поиска",
+            )
         
         # Convert to list of dictionaries
         results = []
@@ -722,18 +779,20 @@ def get_recommendations(request: RecommendationRequest):
                     return default
                 return val
             
-            results.append(RecommendationResult(
-                id=int(safe_get('id', 0)),
-                name=str(safe_get('name', '')),
-                city=str(safe_get('city', '')) if safe_get('city') else None,
-                type=str(safe_get('type', '')) if safe_get('type') else None,
-                transport=str(safe_get('transport', '')) if safe_get('transport') else None,
-                price=str(safe_get('price', '')) if safe_get('price') else None,
-                working_hours=str(safe_get('working_hours', '')) if safe_get('working_hours') else None,
-                rating=float(safe_get('rating', 0.0)) if safe_get('rating') is not None else None,
-                image_url=str(safe_get('image_url', '')) if safe_get('image_url') else None,
-                score=float(safe_get('score', 0.0)),   # 👈 ВАЖНО: добавили score
-            ))
+            results.append(
+                RecommendationResult(
+                    id=int(safe_get("id", 0)),
+                    name=str(safe_get("name", "")),
+                    city=str(safe_get("city", "")) if safe_get("city") else None,
+                    type=str(safe_get("type", "")) if safe_get("type") else None,
+                    transport=str(safe_get("transport", "")) if safe_get("transport") else None,
+                    price=str(safe_get("price", "")) if safe_get("price") else None,
+                    working_hours=str(safe_get("working_hours", "")) if safe_get("working_hours") else None,
+                    rating=float(safe_get("rating", 0.0)) if safe_get("rating") is not None else None,
+                    image_url=str(safe_get("image_url", "")) if safe_get("image_url") else None,
+                    score=float(safe_get("score", 0.0)),  # score из recommend_cosine
+                )
+            )
         
         return results
     except HTTPException:
@@ -742,7 +801,10 @@ def get_recommendations(request: RecommendationRequest):
         import traceback
         error_detail = f"Ошибка при получении рекомендаций: {str(e)}\n{traceback.format_exc()}"
         print(error_detail)  # Log to console for debugging
-        raise HTTPException(status_code=500, detail=f"Ошибка при получении рекомендаций: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при получении рекомендаций: {str(e)}",
+        )
     
 # ---------- USER-BASED RECOMMENDATIONS ЭНДПОИНТЫ ----------
 

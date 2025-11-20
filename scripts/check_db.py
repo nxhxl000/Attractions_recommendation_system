@@ -56,6 +56,20 @@ def get_data_from_db():
                 else:
                     df[col] = ''
         return df
+    
+def get_visited_rated_ids(user_id: int) -> list[int]:
+    """
+    Возвращает список attraction_id, которые пользователь уже посетил и оценил
+    (evaluated = true).
+    """
+    query = """
+        SELECT attraction_id
+        FROM public.planned_visits
+        WHERE user_id = %(user_id)s
+          AND evaluated = TRUE
+    """
+    df_ids = pd.read_sql(query, engine, params={"user_id": user_id})
+    return df_ids["attraction_id"].tolist()    
 
 df = get_data_from_db()
 
@@ -117,13 +131,22 @@ def item_to_feature_dict(row, desired_period):
 # -------------------------
 # Функция для получения векторов и ранжирования
 # -------------------------
-def recommend_cosine(df, user_preferences, top_k=5):
+def recommend_cosine(df, user_preferences, top_k=5, exclude_ids=None):
     """
-    df - DataFrame with columns: name, city, type, transport, price, working_hours, rating
-    user_preferences - dict with keys: city (optional), type (optional, str), transport (optional, str),
-                       price (optional), desired_period (one of 'morning','afternoon','evening','night','anytime'),
-                       min_rating (optional)
+    df - DataFrame with columns: id, name, city, type, transport, price, working_hours, rating
+    user_preferences - ...
+    exclude_ids - список attraction_id, которые нужно исключить (например, уже посещённые и оценённые)
     """
+    # 👇 сначала выкидываем лишние объекты
+    if exclude_ids:
+        df = df[~df["id"].isin(exclude_ids)].copy()
+
+    if df.empty:
+        # чтобы не падать, если всё выкинули
+        df = df.copy()
+        df["score"] = np.nan
+        return df.head(0)
+
     desired_period = user_preferences.get("desired_period", "anytime")
     # Build feature dicts for items
     items_features = [item_to_feature_dict(row, desired_period) for _, row in df.iterrows()]

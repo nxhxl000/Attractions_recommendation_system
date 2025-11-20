@@ -1,6 +1,9 @@
 import { Fragment, useState, useMemo, useEffect } from "react"
 import "./App.css"
 
+const BASE = import.meta.env.VITE_API_URL || ""
+const api = (path: string) => (BASE ? `${BASE}${path}` : `/api${path}`)
+
 export type AttractionCardData = {
   id: number
   name: string
@@ -10,7 +13,7 @@ export type AttractionCardData = {
   price?: string | null
   working_hours?: string | null
   rating?: number | null
-  image_url?: string | null   
+  image_url?: string | null
   score?: number
 }
 
@@ -18,9 +21,16 @@ type AttractionsListProps = {
   items: AttractionCardData[]
   loading: boolean
   error: string | null
-  plannedIds: number[]                     // 👈 добавили
+  plannedIds: number[]
   onPlannedClick: (attractionId: number) => void
   onCancelPlanned: (attractionId: number) => void
+
+  // 👇 новые (можно сделать optional, чтобы ничего не ломалось)
+  userId?: number
+  token?: string
+  userRatings?: Record<number, number | null> // attraction_id -> рейтинг пользователя
+  evaluatedMap?: Record<number, boolean>
+  onUserRatingChange?: (attractionId: number, rating: number) => void
 }
 
 const ITEMS_PER_PAGE = 10
@@ -30,6 +40,30 @@ const detailFields: Array<{ label: string; key: keyof AttractionCardData }> = [
   { label: "Цена", key: "price" },
   { label: "Часы работы", key: "working_hours" },
 ]
+
+function renderStarsReadOnly(rating?: number | null) {
+  const value = rating ?? 0
+  return (
+    <span>
+      {Array.from({ length: 5 }).map((_, idx) => {
+        const starValue = idx + 1
+        const filled = starValue <= value
+        return (
+          <span
+            key={starValue}
+            style={{
+              color: filled ? "#ffc107" : "#e0e0e0",
+              fontSize: 16,
+              marginRight: 2,
+            }}
+          >
+            ★
+          </span>
+        )
+      })}
+    </span>
+  )
+}
 
 function StarRating({ rating }: { rating: number }) {
   const fullStars = Math.floor(rating)
@@ -63,6 +97,11 @@ export default function AttractionsList({
   plannedIds,
   onPlannedClick,
   onCancelPlanned,
+  userId,
+  token,
+  userRatings,
+  evaluatedMap,
+  onUserRatingChange,
 }: AttractionsListProps) {
   console.log(
     "DEBUG AttractionsList file =", import.meta.url,
@@ -160,6 +199,52 @@ export default function AttractionsList({
   }, [filteredAndSortedItems, currentPage, displayedCount, paginationMode])
 
   const hasMore = paginationMode === "load-more" ? displayedCount < filteredAndSortedItems.length : currentPage < totalPages
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [draftRatings, setDraftRatings] = useState<Record<number, number>>({})
+  const [savingId, setSavingId] = useState<number | null>(null)
+
+  async function saveUserRating(attractionId: number, rating: number) {
+    if (!userId || !token) {
+      alert("Нет данных пользователя для сохранения оценки")
+      return
+    }
+    if (rating < 1 || rating > 5) return
+
+    try {
+      setSavingId(attractionId)
+      const res = await fetch(
+        api(`/users/${userId}/planned-visits/${attractionId}/rate`),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ rating }),
+        }
+      )
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "")
+        throw new Error(`Ошибка ${res.status}${text ? `: ${text}` : ""}`)
+      }
+
+      await res.json().catch(() => null)
+
+      // уведомляем родителя (App), чтобы он обновил map userRatings
+      onUserRatingChange?.(attractionId, rating)
+    } catch (e) {
+      console.error("Не удалось сохранить оценку:", e)
+      alert(
+        e instanceof Error
+          ? `Не удалось сохранить оценку: ${e.message}`
+          : "Не удалось сохранить оценку"
+      )
+    } finally {
+      setSavingId(null)
+    }
+  }
+
   const canGoPrevious = paginationMode === "pages" && currentPage > 1
 
   const handleLoadMore = () => {
@@ -648,7 +733,7 @@ export default function AttractionsList({
                   )
                 })}
               </dl>
-              {/* Блок действий: текст + кнопка */}
+              {/* Блок действий: моя оценка + кнопка */}
               <div
                 style={{
                   marginTop: "auto",
@@ -656,48 +741,159 @@ export default function AttractionsList({
                   justifyContent: "flex-end",
                   alignItems: "center",
                   gap: 8,
+                  flexWrap: "wrap",
                 }}
               >
-                {isPlanned && (
-                  <span
-                    style={{
-                      color: "#198754",
-                      fontSize: 13,
-                      fontWeight: 500,
-                    }}
-                  >
-                    Посещение запланировано!
-                  </span>
-                )}
+                {(() => {
+                  const rawUserRating = userRatings?.[attraction.id] ?? null
+                  const isEvaluated = evaluatedMap?.[attraction.id] ?? false   // 👈 по БД
+                  const isPlanned = plannedIds.includes(attraction.id)
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    console.log(
-                      isPlanned ? "Cancel planned, id =" : "Planned click, id =",
-                      attraction.id
+                  const isEditing = editingId === attraction.id
+                  const userRating = rawUserRating ?? 0
+                  const draft = draftRatings[attraction.id] ?? userRating
+                  const displayRating = isEditing ? draft : userRating
+
+                  // ⭐ слева — моя оценка (только для уже оценённых и запланированных)
+                  const ratingBlock =
+                    isPlanned && isEvaluated ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          marginRight: "auto",
+                        }}
+                      >
+                        <span style={{ fontSize: 13 }}>Моя оценка:</span>
+                        {isEditing ? (
+                          <div style={{ display: "flex", gap: 4 }}>
+                            {[1, 2, 3, 4, 5].map((value) => {
+                              const active = value <= displayRating
+                              return (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  disabled={savingId === attraction.id}
+                                  onClick={() =>
+                                    setDraftRatings((prev) => ({
+                                      ...prev,
+                                      [attraction.id]: value,
+                                    }))
+                                  }
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    cursor:
+                                      savingId === attraction.id ? "default" : "pointer",
+                                    padding: 0,
+                                    fontSize: 20,
+                                    color: active ? "#ffc107" : "#e0e0e0",
+                                  }}
+                                  aria-label={`Изменить оценку на ${value} звезд`}
+                                >
+                                  ★
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <>
+                            {renderStarsReadOnly(displayRating)}
+                            {displayRating > 0 && (
+                              <span style={{ fontSize: 12, color: "#555" }}>
+                                {displayRating.toFixed(1)}/5.0
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      isPlanned && !isEvaluated && (
+                        <span
+                          style={{
+                            color: "#198754",
+                            fontSize: 13,
+                            fontWeight: 500,
+                            marginRight: "auto",
+                          }}
+                        >
+                          Посещение запланировано!
+                        </span>
+                      )
                     )
-                    if (isPlanned) {
-                      onCancelPlanned(attraction.id)
-                    } else {
+
+                  // 👇 правая кнопка
+                  const buttonLabel = !isPlanned
+                    ? "Собираюсь посетить"
+                    : isEvaluated
+                      ? isEditing
+                        ? "Сохранить"
+                        : "Изменить"
+                      : "Отменить визит"
+
+                  const handleClick = async () => {
+                    if (!isPlanned) {
                       onPlannedClick(attraction.id)
+                      return
                     }
-                  }}
-                  style={{
-                    padding: "6px 10px",
-                    backgroundColor: isPlanned ? "#dc3545" : "#f4a460",
-                    color: isPlanned ? "#fff" : "#3c2f2f",
-                    border: "none",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontWeight: 500,
-                    boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {isPlanned ? "Отменить визит" : "Собираюсь посетить"}
-                </button>
+
+                    // в планах, но ещё НЕ оценено → только "Отменить визит"
+                    if (!isEvaluated) {
+                      onCancelPlanned(attraction.id)
+                      return
+                    }
+
+                    // объект уже оценён
+                    if (!isEditing) {
+                      setEditingId(attraction.id)
+                      setDraftRatings((prev) => ({
+                        ...prev,
+                        [attraction.id]: userRating || 1,
+                      }))
+                    } else {
+                      const newRating =
+                        draftRatings[attraction.id] !== undefined
+                          ? draftRatings[attraction.id]
+                          : (userRating || 1)
+
+                      await saveUserRating(attraction.id, newRating)
+                      setEditingId(null)
+                    }
+                  }
+
+                  return (
+                    <>
+                      {ratingBlock}
+
+                      <button
+                        type="button"
+                        onClick={handleClick}
+                        disabled={savingId === attraction.id}
+                        style={{
+                          padding: "6px 10px",
+                          backgroundColor: !isPlanned
+                            ? "#f4a460"
+                            : isEvaluated                       // 👈 вместо userRating != null
+                              ? (isEditing ? "#198754" : "#0d6efd")
+                              : "#dc3545",
+                          color: !isPlanned
+                            ? "#3c2f2f"
+                            : "#fff",
+                          border: "none",
+                          borderRadius: 6,
+                          cursor: savingId === attraction.id ? "default" : "pointer",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {buttonLabel}
+                      </button>
+                    </>
+                  )
+                })()}
               </div>
             </article>
           )

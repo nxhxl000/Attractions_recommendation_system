@@ -14,6 +14,8 @@ const api = (path: string) => (BASE ? `${BASE}${path}` : `/api${path}`);
 export default function App() {
   const [items, setItems] = useState<AttractionCardData[]>([]);
   const [plannedIds, setPlannedIds] = useState<number[]>([]);
+  const [userRatings, setUserRatings] = useState<Record<number, number | null>>({});
+  const [evaluatedMap, setEvaluatedMap] = useState<Record<number, boolean>>({}); // 👈 НОВОЕ
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRecommendations, setShowRecommendations] = useState(false);
@@ -78,7 +80,8 @@ export default function App() {
 
   type PlannedVisitFromApi = {
     attraction_id: number;
-    // остальные поля нам не нужны для кнопок
+    evaluated: boolean;           // 👈 прилетает из backend
+    user_rating?: number | null;  // 👈 наша пользовательская оценка
   };
 
   async function fetchPlannedVisits(userId: number, token: string) {
@@ -95,7 +98,25 @@ export default function App() {
       }
 
       const data: PlannedVisitFromApi[] = await res.json();
+
+      // список запланированных id
       setPlannedIds(data.map((item) => item.attraction_id));
+
+      // 👇 мапа attraction_id → user_rating (где есть оценка)
+      setUserRatings(
+        Object.fromEntries(
+          data
+            .filter((item) => item.user_rating != null)
+            .map((item) => [item.attraction_id, item.user_rating as number])
+        )
+      );
+
+      // 👇 мапа attraction_id → evaluated (true / false)
+      setEvaluatedMap(
+        Object.fromEntries(
+          data.map((item) => [item.attraction_id, item.evaluated])
+        )
+      );
     } catch (e) {
       console.error("Не удалось загрузить запланированные визиты:", e);
     }
@@ -124,19 +145,6 @@ export default function App() {
       setNeedsOnboarding(false);
     }
   }
-  const [userRecommendations, setUserRecommendations] = useState<
-    AttractionCardData[]
-  >([]);
-
-  const fetchUserRecommendations = async () => {
-    if (!currentUser) return;
-    const res = await fetch(api(`/users/${currentUser.id}/recommendations`));
-    if (res.ok) {
-      const data: AttractionCardData[] = await res.json();
-      setUserRecommendations(data);
-      setShowRecommendations(true);
-    }
-  };
 
   // 🚪 если не залогинен — показываем только форму логина
   if (!token || !currentUser) {
@@ -341,6 +349,8 @@ export default function App() {
                 setCurrentUser(null);
                 setItems([]);
                 setPlannedIds([]);
+                setUserRatings({});
+                setEvaluatedMap({});
                 setActivePage("main");
 
                 // чистим сохранённую сессию
@@ -368,6 +378,13 @@ export default function App() {
           plannedIds={plannedIds}
           onPlannedClick={handleAddPlanned}
           onCancelPlanned={handleRemovePlanned}
+          userId={currentUser.id}
+          token={token || ""}
+          userRatings={userRatings}
+          evaluatedMap={evaluatedMap}                          // 👈 НОВОЕ
+          onUserRatingChange={(attractionId, rating) =>
+            setUserRatings((prev) => ({ ...prev, [attractionId]: rating }))
+          }
         />
       </div>
 
@@ -427,6 +444,7 @@ export default function App() {
               plannedIds={plannedIds}
               onPlannedClick={handleAddPlanned}
               onCancelPlanned={handleRemovePlanned}
+              userId={currentUser.id}   // 👈 вот это главное
             />
           </div>
         </div>

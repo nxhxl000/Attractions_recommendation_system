@@ -94,12 +94,14 @@ type RecommendationFormProps = {
   plannedIds: number[]
   onPlannedClick: (attractionId: number) => void
   onCancelPlanned: (attractionId: number) => void
+  userId?: number          // 👈 добавили
 }
 
 export default function RecommendationForm({
   plannedIds,
   onPlannedClick,
   onCancelPlanned,
+  userId,
 }: RecommendationFormProps) {
   const [formData, setFormData] = useState<RecommendationRequest>({
     city: "",
@@ -134,7 +136,11 @@ export default function RecommendationForm({
         payload.min_rating = formData.min_rating
       }
 
-      const res = await fetch(api("/recommendations"), {
+      const url = userId
+        ? api(`/recommendations?user_id=${userId}`)
+        : api("/recommendations")
+
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -354,7 +360,7 @@ export default function RecommendationForm({
         </div>
       )}
 
-       {results.length > 0 && (
+      {results.length > 0 && (
         <div>
           <h3 style={{ marginBottom: 16 }}>Результаты ({results.length}):</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -536,7 +542,6 @@ export default function RecommendationForm({
           </div>
         </div>
       )}
-        </div>
-      )
-      }
-
+    </div>
+  )
+}
