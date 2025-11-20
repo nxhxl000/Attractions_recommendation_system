@@ -2,7 +2,7 @@
 import os
 import sys
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import (
@@ -557,7 +557,7 @@ def get_recommendations(request: RecommendationRequest):
 # ---------- USER-BASED RECOMMENDATIONS ЭНДПОИНТЫ ----------
 
 @app.get("/recommend/user/{user_id}")
-def recommend_user(user_id: int, top_k: int = 10):
+def recommend_user(user_id: int, top_k: int = Query(10, ge=1, le=10)):
     try:
         get_recommendations_for_user = _import_user_based_functions()
         result = get_recommendations_for_user(user_id, top_k)

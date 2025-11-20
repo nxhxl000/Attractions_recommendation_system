@@ -11,6 +11,7 @@ export type AttractionCardData = {
   working_hours?: string | null
   rating?: number | null
   image_url?: string | null   
+  score?: number
 }
 
 type AttractionsListProps = {

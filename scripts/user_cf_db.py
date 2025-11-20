@@ -32,7 +32,7 @@ def load_data_from_db() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     attractions_df = pd.read_sql(
         """
-        SELECT id, name, city, type, transport, price, working_hours, rating
+        SELECT id, name, city, type, transport, price, working_hours, rating, image_url
         FROM public.attractions
         """,
         engine,
