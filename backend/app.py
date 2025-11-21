@@ -574,6 +574,7 @@ def save_onboarding_ratings(payload: RatingsBatchInput, db: Session = Depends(ge
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
+    # 1. Сохраняем оценки
     try:
         for r in payload.ratings:
             # композитный PK: (user_id, attraction_id)
@@ -592,7 +593,22 @@ def save_onboarding_ratings(payload: RatingsBatchInput, db: Session = Depends(ge
         db.commit()
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении оценок: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при сохранении оценок: {e}",
+        )
+
+    # 2. После успешного сохранения — пересчитываем user_similarity
+    #    db_build_user_similarity.py лежит в том же каталоге, что и app.py
+    try:
+        print("[user_similarity] Запускаю пересчёт матрицы после онбординга…")
+        from .db_build_user_similarity import main as rebuild_user_similarity
+
+        rebuild_user_similarity()
+        print("[user_similarity] Пересчёт матрицы успешно завершён.")
+    except Exception as e:
+        # ВАЖНО: не роняем запрос, если пересчёт не удался — просто логируем.
+        print(f"[user_similarity] Ошибка при пересчёте: {e}")
 
     return {"status": "ok"}
 
