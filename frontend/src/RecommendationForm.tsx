@@ -71,7 +71,7 @@ type RecommendationRequest = {
   price?: string
   desired_period: string
   min_rating?: number
-  top_k: number
+  top_k?: number
 }
 
 type RecommendationResult = {
@@ -110,7 +110,7 @@ export default function RecommendationForm({
     price: "",
     desired_period: "anytime",
     min_rating: undefined,
-    top_k: 5,
+    // top_k: 5,
   })
   const [results, setResults] = useState<RecommendationResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -126,7 +126,7 @@ export default function RecommendationForm({
       // Prepare request payload (only include non-empty fields)
       const payload: RecommendationRequest = {
         desired_period: formData.desired_period,
-        top_k: formData.top_k,
+        // top_k: 5 //formData.top_k,
       }
       if (formData.city?.trim()) payload.city = formData.city.trim()
       if (formData.type?.trim()) payload.type = formData.type.trim()
@@ -304,7 +304,7 @@ export default function RecommendationForm({
             </p>
           </div>
 
-          <div>
+          {/* <div>
             <label htmlFor="top_k" style={{ display: "block", marginBottom: 4 }}>
               Количество рекомендаций
             </label>
@@ -325,7 +325,7 @@ export default function RecommendationForm({
                 boxSizing: "border-box",
               }}
             />
-          </div>
+          </div> */}
         </div>
 
         <button

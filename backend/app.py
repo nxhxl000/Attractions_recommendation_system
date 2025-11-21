@@ -716,7 +716,7 @@ def get_recommendations(
         # Prepare user preferences
         user_prefs = {
             "desired_period": request.desired_period,
-            "top_k": request.top_k,
+            # "top_k": request.top_k,
         }
         if request.city:
             user_prefs["city"] = request.city
@@ -746,7 +746,7 @@ def get_recommendations(
         result_df = recommend_cosine(
             df,
             user_prefs,
-            top_k=request.top_k,
+            # top_k=request.top_k,
             exclude_ids=exclude_ids,    # 👈 важно: передаём в алгоритм
         )
 
