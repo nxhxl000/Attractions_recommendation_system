@@ -244,6 +244,7 @@ export default function App() {
         user={currentUser}
         token={token}
         onBack={() => setActivePage("main")}
+        onCancelPlanned={handleRemovePlanned}
       />
     );
   }

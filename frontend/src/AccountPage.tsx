@@ -28,6 +28,7 @@ interface AccountPageProps {
   user: UserInfo
   token: string
   onBack: () => void
+  onCancelPlanned: (attractionId: number) => void   // 👈 новое
 }
 
 function renderStarsReadOnly(rating?: number | null) {
@@ -55,18 +56,21 @@ function renderStarsReadOnly(rating?: number | null) {
   )
 }
 
-export default function AccountPage({ user, token, onBack }: AccountPageProps) {
+export default function AccountPage({ user, token, onBack, onCancelPlanned }: AccountPageProps) {
   const [items, setItems] = useState<PlannedAttraction[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // оценки пользователя для ещё НЕ оценённых (первичный рейтинг)
+  // оценки пользователя для ещё НЕ оценённых (первичная оценка)
   const [userRatings, setUserRatings] = useState<Record<number, number>>({})
   const [savingId, setSavingId] = useState<number | null>(null)
 
   // ⚙️ состояние редактирования для ОЦЕНЁННЫХ объектов
   const [editingId, setEditingId] = useState<number | null>(null)
   const [draftRatings, setDraftRatings] = useState<Record<number, number>>({})
+
+  // 👇 НОВОЕ: состояние "отменяю визит" для кнопки
+  const [cancelingId, setCancelingId] = useState<number | null>(null)
 
   async function load() {
     setLoading(true)
@@ -145,6 +149,48 @@ export default function AccountPage({ user, token, onBack }: AccountPageProps) {
       )
     } finally {
       setSavingId(null)
+    }
+  }
+
+  // 👇 НОВОЕ: отмена визита (DELETE /planned-visits)
+  async function handleCancelPlanned(attractionId: number) {
+    if (cancelingId !== null) return
+
+    try {
+      setCancelingId(attractionId)
+
+      const res = await fetch(api("/planned-visits"), {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          attraction_id: attractionId,
+        }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "")
+        throw new Error(`Ошибка ${res.status}${text ? `: ${text}` : ""}`)
+      }
+
+      await res.json().catch(() => null)
+
+      // локально убираем из списка
+      setItems(prev =>
+        prev.filter(item => item.attraction_id !== attractionId)
+      )
+    } catch (e) {
+      console.error("Не удалось отменить визит:", e)
+      alert(
+        e instanceof Error
+          ? `Не удалось отменить визит: ${e.message}`
+          : "Не удалось отменить визит"
+      )
+    } finally {
+      setCancelingId(null)
     }
   }
 
@@ -368,6 +414,47 @@ export default function AccountPage({ user, token, onBack }: AccountPageProps) {
                         Сохраняю...
                       </span>
                     )}
+                  </div>
+
+                  {/* 👇 НОВЫЙ БЛОК: "Посещение запланировано!" + кнопка "Отменить визит" */}
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#198754",
+                        fontSize: 13,
+                        fontWeight: 500,
+                      }}
+                    >
+                      Посещение запланировано!
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCancelPlanned(item.attraction_id)                     // 👈 обновляем plannedIds в App
+                        setItems(prev => prev.filter(i => i.attraction_id !== item.attraction_id)) // 👈 локально убираем из списка
+                      }}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 4,
+                        border: "none",
+                        backgroundColor: "#dc3545",
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
+                      }}
+                    >
+                      Отменить визит
+                    </button>
                   </div>
                 </div>
               </article>
